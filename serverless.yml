@@ -1,0 +1,92 @@
+org: rolandodiaz
+service: api-compras
+
+provider:
+  name: aws
+  runtime: python3.9
+  memorySize: 1024
+  timeout: 30
+  region: us-east-1
+  iam:
+    role: arn:aws:iam::409362080365:role/LabRole
+  environment:
+    TABLE_NAME: ${sls:stage}-t_compras
+    JWT_SECRET: mi-super-secreto-jwt-2025
+
+functions:
+  registrar-compra:
+    handler: main.registrar_compra
+    events:
+      - http:
+          path: /compras
+          method: post
+          cors: true
+          integration: lambda
+  
+  listar-compras:
+    handler: main.listar_compras_usuario
+    events:
+      - http:
+          path: /compras
+          method: get
+          cors: true
+          integration: lambda
+  
+  obtener-compra:
+    handler: main.obtener_compra
+    events:
+      - http:
+          path: /compras/{codigo}
+          method: get
+          cors: true
+          integration: lambda
+  
+  estadisticas-compras:
+    handler: main.obtener_estadisticas_compras
+    events:
+      - http:
+          path: /compras/estadisticas
+          method: get
+          cors: true
+          integration: lambda
+
+resources:
+  Resources:
+    TablaCompras:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLE_NAME}
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: codigo_compra
+            AttributeType: S
+          - AttributeName: usuario_id
+            AttributeType: S
+          - AttributeName: fecha_compra
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: codigo_compra
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+        GlobalSecondaryIndexes:
+          - IndexName: usuario_id-fecha_compra-index
+            KeySchema:
+              - AttributeName: usuario_id
+                KeyType: HASH
+              - AttributeName: fecha_compra
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: tenant_id-fecha_compra-index
+            KeySchema:
+              - AttributeName: tenant_id
+                KeyType: HASH
+              - AttributeName: fecha_compra
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL

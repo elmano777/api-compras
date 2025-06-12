@@ -1,0 +1,32 @@
+{
+    "name": "api-compras-medicinas",
+    "version": "1.0.0",
+    "description": "API de compras para medicinas - Multi-tenant Serverless",
+    "main": "main.py",
+    "scripts": {
+      "deploy-dev": "serverless deploy --stage dev",
+      "deploy-test": "serverless deploy --stage test", 
+      "deploy-prod": "serverless deploy --stage prod",
+      "remove-dev": "serverless remove --stage dev",
+      "remove-test": "serverless remove --stage test",
+      "remove-prod": "serverless remove --stage prod",
+      "info": "serverless info",
+      "logs": "serverless logs -f",
+      "install-deps": "pip install -r requirements.txt"
+    },
+    "devDependencies": {
+      "serverless": "^3.38.0"
+    },
+    "keywords": [
+      "aws",
+      "lambda",
+      "serverless",
+      "dynamodb",
+      "medicinas",
+      "compras",
+      "multi-tenant",
+      "python"
+    ],
+    "author": "Rolando Diaz",
+    "license": "MIT"
+  }
