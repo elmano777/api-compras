@@ -2,23 +2,15 @@ import json
 import boto3
 import jwt
 import os
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-import uuid
-from botocore.exceptions import ClientError
 
-# Cliente DynamoDB
+# Clientes AWS
 dynamodb = boto3.resource('dynamodb')
 table_name = os.environ['TABLE_NAME']
-table = dynamodb.Table(table_name)
 jwt_secret = os.environ['JWT_SECRET']
-
-class DecimalEncoder(json.JSONEncoder):
-    """Encoder personalizado para manejar Decimal de DynamoDB"""
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super(DecimalEncoder, self).default(obj)
+table = dynamodb.Table(table_name)
 
 def lambda_response(status_code, body):
     """Función helper para respuestas consistentes"""
@@ -30,172 +22,219 @@ def lambda_response(status_code, body):
             'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
             'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
         },
-        'body': json.dumps(body, cls=DecimalEncoder)
+        'body': json.dumps(body, default=str, ensure_ascii=False)
     }
 
-def validar_token(auth_header):
-    """Función para validar token JWT"""
+def extract_user_from_token(event):
+    """Extrae información del usuario desde el token JWT"""
     try:
+        auth_header = event.get('headers', {}).get('Authorization') or event.get('headers', {}).get('authorization')
+        
         if not auth_header or not auth_header.startswith('Bearer '):
-            raise Exception('Token no proporcionado')
+            return None, 'Token requerido'
         
         token = auth_header.split(' ')[1]
-        payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
-        return payload
+        
+        try:
+            payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+            return payload, None
+        except jwt.ExpiredSignatureError:
+            return None, 'Token expirado'
+        except jwt.InvalidTokenError:
+            return None, 'Token inválido'
+            
     except Exception as e:
-        raise Exception('Token inválido o expirado')
+        print(f"Error extrayendo usuario del token: {str(e)}")
+        return None, 'Error procesando token'
 
 def generar_codigo_compra():
-    """Función para generar código único de compra"""
-    timestamp = str(int(datetime.now().timestamp()))
-    unique_id = str(uuid.uuid4())[:8]
-    return f"COMP-{timestamp}-{unique_id}".upper()
+    """Genera un código único para la compra"""
+    timestamp = int(datetime.now().timestamp())
+    random_part = str(uuid.uuid4()).replace('-', '')[:8].upper()
+    return f"COM-{timestamp}-{random_part}"
+
+def decimal_to_float(obj):
+    """Convierte Decimal a float para serialización JSON"""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: decimal_to_float(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_float(item) for item in obj]
+    return obj
 
 def registrar_compra(event, context):
-    """REGISTRAR COMPRA"""
+    """Función para registrar una nueva compra"""
     try:
-        # Validar token
-        auth_header = event.get('headers', {}).get('Authorization') or event.get('headers', {}).get('authorization')
-        usuario = validar_token(auth_header)
+        # Validar token y extraer usuario
+        usuario, error = extract_user_from_token(event)
+        if error:
+            return lambda_response(401, {'error': error})
         
-        tenant_id = usuario['tenant_id']
-        usuario_id = usuario['usuario_id']
-        body = json.loads(event['body'])
+        # Parsear body
+        body = event.get('body')
+        if isinstance(body, str):
+            body = json.loads(body)
         
         # Validar campos requeridos
-        if not body.get('productos') or not isinstance(body['productos'], list):
+        if 'productos' not in body or not body['productos']:
             return lambda_response(400, {'error': 'Lista de productos requerida'})
         
-        if not body['productos']:
-            return lambda_response(400, {'error': 'La compra debe tener al menos un producto'})
+        productos = body['productos']
         
         # Validar estructura de productos
-        total_compra = Decimal('0')
-        productos_procesados = []
+        for i, producto in enumerate(productos):
+            required_fields = ['codigo', 'nombre', 'precio', 'cantidad']
+            for field in required_fields:
+                if field not in producto or producto[field] is None:
+                    return lambda_response(400, {
+                        'error': f'Campo requerido en producto {i+1}: {field}'
+                    })
+            
+            # Validar tipos de datos
+            try:
+                if not isinstance(producto['cantidad'], int) or producto['cantidad'] <= 0:
+                    return lambda_response(400, {
+                        'error': f'Cantidad debe ser un número entero mayor a 0 en producto {i+1}'
+                    })
+                
+                precio = float(producto['precio'])
+                if precio <= 0:
+                    return lambda_response(400, {
+                        'error': f'Precio debe ser mayor a 0 en producto {i+1}'
+                    })
+                
+                # Convertir a Decimal para DynamoDB
+                producto['precio'] = Decimal(str(precio))
+                producto['subtotal'] = Decimal(str(precio * producto['cantidad']))
+                
+            except (ValueError, TypeError):
+                return lambda_response(400, {
+                    'error': f'Precio inválido en producto {i+1}'
+                })
         
-        for producto in body['productos']:
-            if not all(key in producto for key in ['codigo', 'nombre', 'precio', 'cantidad']):
-                return lambda_response(400, {'error': 'Cada producto debe tener: codigo, nombre, precio, cantidad'})
-            
-            cantidad = int(producto['cantidad'])
-            precio = Decimal(str(producto['precio']))
-            subtotal = precio * cantidad
-            
-            producto_procesado = {
-                'codigo': producto['codigo'],
-                'nombre': producto['nombre'],
-                'precio': precio,
-                'cantidad': cantidad,
-                'subtotal': subtotal,
-                'categoria': producto.get('categoria', ''),
-                'laboratorio': producto.get('laboratorio', ''),
-                'descripcion': producto.get('descripcion', '')
-            }
-            
-            productos_procesados.append(producto_procesado)
-            total_compra += subtotal
+        # Calcular totales
+        total_productos = sum(p['cantidad'] for p in productos)
+        total_monto = sum(p['subtotal'] for p in productos)
         
+        # Generar código de compra
         codigo_compra = generar_codigo_compra()
-        fecha_actual = datetime.now(timezone.utc).isoformat()
         
-        # Crear objeto compra
-        compra = {
-            'tenant_id': tenant_id,
+        # Crear item de compra
+        compra_item = {
+            'tenant_id': usuario['tenant_id'],
             'codigo_compra': codigo_compra,
-            'usuario_id': usuario_id,
-            'productos': productos_procesados,
-            'total_productos': len(productos_procesados),
-            'total_cantidad': sum(p['cantidad'] for p in productos_procesados),
-            'total_compra': total_compra,
-            'moneda': body.get('moneda', 'PEN'),
-            'estado': 'COMPLETADA',
-            'metodo_pago': body.get('metodo_pago', 'EFECTIVO'),
-            'direccion_envio': body.get('direccion_envio', ''),
-            'telefono_contacto': body.get('telefono_contacto', ''),
-            'notas': body.get('notas', ''),
-            'fecha_compra': fecha_actual,
-            'fecha_creacion': fecha_actual,
-            'fecha_actualizacion': fecha_actual,
-            'activo': True
+            'email_usuario': usuario['email'],
+            'nombre_usuario': usuario['nombre'],
+            'productos': productos,
+            'total_productos': total_productos,
+            'total_monto': total_monto,
+            'fecha_compra': datetime.now().isoformat(),
+            'estado': 'completada',
+            'metodo_pago': body.get('metodo_pago', 'online'),
+            'direccion_entrega': body.get('direccion_entrega', ''),
+            'observaciones': body.get('observaciones', '')
         }
         
         # Guardar en DynamoDB
-        table.put_item(Item=compra)
+        table.put_item(Item=compra_item)
+        
+        # Preparar respuesta (convertir Decimals a float)
+        compra_respuesta = decimal_to_float(compra_item)
         
         return lambda_response(201, {
             'message': 'Compra registrada exitosamente',
-            'compra': compra
+            'compra': compra_respuesta
         })
         
-    except ValueError as e:
-        return lambda_response(400, {'error': f'Error en formato de datos: {str(e)}'})
+    except json.JSONDecodeError:
+        return lambda_response(400, {'error': 'JSON inválido'})
     except Exception as e:
-        print(f'Error registrando compra: {str(e)}')
-        if 'Token inválido' in str(e):
-            return lambda_response(401, {'error': str(e)})
+        print(f"Error registrando compra: {str(e)}")
         return lambda_response(500, {'error': 'Error interno del servidor'})
 
-def listar_compras_usuario(event, context):
-    """LISTAR TODAS LAS COMPRAS DE UN USUARIO"""
+def listar_compras(event, context):
+    """Función para listar todas las compras de un usuario"""
     try:
-        # Validar token
-        auth_header = event.get('headers', {}).get('Authorization') or event.get('headers', {}).get('authorization')
-        usuario = validar_token(auth_header)
-        
-        tenant_id = usuario['tenant_id']
-        usuario_id = usuario['usuario_id']
+        # Validar token y extraer usuario
+        usuario, error = extract_user_from_token(event)
+        if error:
+            return lambda_response(401, {'error': error})
         
         # Parámetros de paginación
-        limit = int(event.get('queryStringParameters', {}).get('limit', 20))
-        last_key = event.get('queryStringParameters', {}).get('lastKey')
+        query_params = event.get('queryStringParameters') or {}
+        limit = int(query_params.get('limit', 20))
+        last_key = query_params.get('lastKey')
         
-        # Construir parámetros de consulta
-        scan_kwargs = {
-            'FilterExpression': boto3.dynamodb.conditions.Attr('tenant_id').eq(tenant_id) & 
-                              boto3.dynamodb.conditions.Attr('usuario_id').eq(usuario_id) &
-                              boto3.dynamodb.conditions.Attr('activo').eq(True),
+        # Validar límite
+        if limit > 100:
+            limit = 100
+        elif limit < 1:
+            limit = 20
+        
+        # Preparar consulta
+        query_params_dynamodb = {
+            'KeyConditionExpression': 'tenant_id = :tenant_id',
+            'ExpressionAttributeValues': {
+                ':tenant_id': usuario['tenant_id']
+            },
+            'ScanIndexForward': False,  # Ordenar por fecha descendente
             'Limit': limit
         }
         
+        # Filtrar por usuario específico
+        query_params_dynamodb['FilterExpression'] = 'email_usuario = :email'
+        query_params_dynamodb['ExpressionAttributeValues'][':email'] = usuario['email']
+        
+        # Paginación
         if last_key:
             try:
-                last_evaluated_key = json.loads(last_key)
-                scan_kwargs['ExclusiveStartKey'] = last_evaluated_key
-            except:
-                pass
+                import base64
+                decoded_key = json.loads(base64.b64decode(last_key).decode())
+                query_params_dynamodb['ExclusiveStartKey'] = decoded_key
+            except Exception as e:
+                print(f"Error decodificando lastKey: {str(e)}")
+                return lambda_response(400, {'error': 'lastKey inválido'})
         
         # Ejecutar consulta
-        response = table.scan(**scan_kwargs)
+        response = table.query(**query_params_dynamodb)
         
-        # Ordenar por fecha de compra (más reciente primero)
-        compras = sorted(response['Items'], key=lambda x: x['fecha_compra'], reverse=True)
+        # Procesar resultados
+        compras = decimal_to_float(response.get('Items', []))
         
         # Preparar respuesta
-        resultado = {
+        result = {
             'compras': compras,
-            'count': len(compras),
-            'lastEvaluatedKey': json.dumps(response.get('LastEvaluatedKey')) if response.get('LastEvaluatedKey') else None
+            'count': len(compras)
         }
         
-        return lambda_response(200, resultado)
+        # Paginación
+        if 'LastEvaluatedKey' in response:
+            import base64
+            next_key = base64.b64encode(
+                json.dumps(response['LastEvaluatedKey']).encode()
+            ).decode()
+            result['nextKey'] = next_key
+            result['hasMore'] = True
+        else:
+            result['hasMore'] = False
+        
+        return lambda_response(200, result)
         
     except Exception as e:
-        print(f'Error listando compras: {str(e)}')
-        if 'Token inválido' in str(e):
-            return lambda_response(401, {'error': str(e)})
+        print(f"Error listando compras: {str(e)}")
         return lambda_response(500, {'error': 'Error interno del servidor'})
 
-def obtener_compra(event, context):
-    """OBTENER DETALLE DE UNA COMPRA ESPECÍFICA"""
+def buscar_compra(event, context):
+    """Función para buscar una compra específica por código"""
     try:
-        # Validar token
-        auth_header = event.get('headers', {}).get('Authorization') or event.get('headers', {}).get('authorization')
-        usuario = validar_token(auth_header)
+        # Validar token y extraer usuario
+        usuario, error = extract_user_from_token(event)
+        if error:
+            return lambda_response(401, {'error': error})
         
-        tenant_id = usuario['tenant_id']
-        usuario_id = usuario['usuario_id']
+        # Extraer código de compra del path
         codigo_compra = event.get('pathParameters', {}).get('codigo')
-        
         if not codigo_compra:
             return lambda_response(400, {'error': 'Código de compra requerido'})
         
@@ -203,7 +242,7 @@ def obtener_compra(event, context):
         try:
             response = table.get_item(
                 Key={
-                    'tenant_id': tenant_id,
+                    'tenant_id': usuario['tenant_id'],
                     'codigo_compra': codigo_compra
                 }
             )
@@ -214,97 +253,74 @@ def obtener_compra(event, context):
             compra = response['Item']
             
             # Verificar que la compra pertenece al usuario
-            if compra['usuario_id'] != usuario_id:
-                return lambda_response(403, {'error': 'No tiene permisos para ver esta compra'})
+            if compra.get('email_usuario') != usuario['email']:
+                return lambda_response(404, {'error': 'Compra no encontrada'})
             
-            if not compra.get('activo', True):
-                return lambda_response(404, {'error': 'Compra no disponible'})
+            # Convertir Decimals y responder
+            compra_respuesta = decimal_to_float(compra)
             
-            return lambda_response(200, {'compra': compra})
+            return lambda_response(200, {
+                'compra': compra_respuesta
+            })
             
-        except ClientError as e:
-            print(f'Error de DynamoDB: {str(e)}')
-            return lambda_response(500, {'error': 'Error accediendo a la base de datos'})
+        except Exception as e:
+            print(f"Error buscando compra: {str(e)}")
+            return lambda_response(500, {'error': 'Error interno del servidor'})
         
     except Exception as e:
-        print(f'Error obteniendo compra: {str(e)}')
-        if 'Token inválido' in str(e):
-            return lambda_response(401, {'error': str(e)})
+        print(f"Error en buscar_compra: {str(e)}")
         return lambda_response(500, {'error': 'Error interno del servidor'})
 
 def obtener_estadisticas_compras(event, context):
-    """OBTENER ESTADÍSTICAS DE COMPRAS DEL USUARIO"""
+    """Función para obtener estadísticas de compras del usuario"""
     try:
-        # Validar token
-        auth_header = event.get('headers', {}).get('Authorization') or event.get('headers', {}).get('authorization')
-        usuario = validar_token(auth_header)
+        # Validar token y extraer usuario
+        usuario, error = extract_user_from_token(event)
+        if error:
+            return lambda_response(401, {'error': error})
         
-        tenant_id = usuario['tenant_id']
-        usuario_id = usuario['usuario_id']
-        
-        # Obtener todas las compras del usuario
-        response = table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr('tenant_id').eq(tenant_id) & 
-                           boto3.dynamodb.conditions.Attr('usuario_id').eq(usuario_id) &
-                           boto3.dynamodb.conditions.Attr('activo').eq(True)
+        # Consultar todas las compras del usuario
+        response = table.query(
+            KeyConditionExpression='tenant_id = :tenant_id',
+            FilterExpression='email_usuario = :email',
+            ExpressionAttributeValues={
+                ':tenant_id': usuario['tenant_id'],
+                ':email': usuario['email']
+            }
         )
         
-        compras = response['Items']
+        compras = response.get('Items', [])
         
         if not compras:
             return lambda_response(200, {
                 'total_compras': 0,
                 'total_gastado': 0,
                 'total_productos_comprados': 0,
-                'compra_promedio': 0,
-                'ultima_compra': None,
-                'categorias_favoritas': [],
-                'laboratorios_favoritos': []
+                'promedio_por_compra': 0,
+                'primera_compra': None,
+                'ultima_compra': None
             })
         
         # Calcular estadísticas
         total_compras = len(compras)
-        total_gastado = sum(float(compra['total_compra']) for compra in compras)
-        total_productos = sum(compra['total_cantidad'] for compra in compras)
-        compra_promedio = total_gastado / total_compras if total_compras > 0 else 0
+        total_gastado = sum(float(compra.get('total_monto', 0)) for compra in compras)
+        total_productos = sum(compra.get('total_productos', 0) for compra in compras)
+        promedio_por_compra = total_gastado / total_compras if total_compras > 0 else 0
         
-        # Encontrar última compra
-        ultima_compra = max(compras, key=lambda x: x['fecha_compra'])
+        # Ordenar por fecha para obtener primera y última compra
+        compras_ordenadas = sorted(compras, key=lambda x: x.get('fecha_compra', ''))
+        primera_compra = compras_ordenadas[0].get('fecha_compra') if compras_ordenadas else None
+        ultima_compra = compras_ordenadas[-1].get('fecha_compra') if compras_ordenadas else None
         
-        # Analizar categorías y laboratorios favoritos
-        categorias = {}
-        laboratorios = {}
-        
-        for compra in compras:
-            for producto in compra['productos']:
-                categoria = producto.get('categoria', 'Sin categoría')
-                laboratorio = producto.get('laboratorio', 'Sin laboratorio')
-                
-                categorias[categoria] = categorias.get(categoria, 0) + producto['cantidad']
-                laboratorios[laboratorio] = laboratorios.get(laboratorio, 0) + producto['cantidad']
-        
-        # Top 5 categorías y laboratorios
-        categorias_favoritas = sorted(categorias.items(), key=lambda x: x[1], reverse=True)[:5]
-        laboratorios_favoritos = sorted(laboratorios.items(), key=lambda x: x[1], reverse=True)[:5]
-        
-        estadisticas = {
+        return lambda_response(200, {
             'total_compras': total_compras,
             'total_gastado': round(total_gastado, 2),
             'total_productos_comprados': total_productos,
-            'compra_promedio': round(compra_promedio, 2),
-            'ultima_compra': {
-                'codigo': ultima_compra['codigo_compra'],
-                'fecha': ultima_compra['fecha_compra'],
-                'total': float(ultima_compra['total_compra'])
-            },
-            'categorias_favoritas': [{'categoria': cat, 'cantidad': cant} for cat, cant in categorias_favoritas],
-            'laboratorios_favoritos': [{'laboratorio': lab, 'cantidad': cant} for lab, cant in laboratorios_favoritos]
-        }
-        
-        return lambda_response(200, estadisticas)
+            'promedio_por_compra': round(promedio_por_compra, 2),
+            'primera_compra': primera_compra,
+            'ultima_compra': ultima_compra
+        })
         
     except Exception as e:
-        print(f'Error obteniendo estadísticas: {str(e)}')
-        if 'Token inválido' in str(e):
-            return lambda_response(401, {'error': str(e)})
+        print(f"Error obteniendo estadísticas: {str(e)}")
         return lambda_response(500, {'error': 'Error interno del servidor'})

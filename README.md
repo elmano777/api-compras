@@ -1,53 +1,62 @@
-# API Compras - Microservicio Multi-tenant (Medicinas)
+# API Compras - Microservicio Multi-tenant para Inkafarma
 
-Este microservicio maneja el registro y gestión de compras de productos farmacéuticos con soporte multi-tenant usando AWS Lambda, DynamoDB y autenticación JWT.
+Este microservicio maneja el registro y gestión de compras con soporte multi-tenant usando AWS Lambda, DynamoDB y autenticación JWT.
 
 ## Características
 
 - ✅ Multi-tenancy (soporte para múltiples inquilinos)
-- ✅ Serverless con AWS Lambda (Python 3.9)
-- ✅ Protección con tokens JWT
-- ✅ Registro completo de compras con múltiples productos
-- ✅ Listado de compras del usuario con paginación
-- ✅ Detalle de compras individuales
-- ✅ Estadísticas de compras del usuario
-- ✅ DynamoDB Streams habilitado para CDC
+- ✅ Serverless con AWS Lambda
+- ✅ Protegido con autenticación JWT
+- ✅ Registro de compras con múltiples productos
+- ✅ Listado paginado de compras por usuario
+- ✅ Búsqueda de compras por código
+- ✅ Estadísticas de compras por usuario
+- ✅ DynamoDB Streams habilitado para ingesta en tiempo real
 - ✅ CORS habilitado
 - ✅ Despliegue automatizado con Serverless Framework
+- ✅ Manejo de decimales para cálculos monetarios precisos
+
+## Estructura de Compras
+
+Cada compra contiene:
+- **tenant_id**: Identificador del inquilino (extraído del JWT)
+- **codigo_compra**: Código único generado automáticamente (COM-timestamp-random)
+- **email_usuario**: Email del usuario que realizó la compra
+- **nombre_usuario**: Nombre del usuario
+- **productos**: Array de productos comprados con código, nombre, precio, cantidad y subtotal
+- **total_productos**: Cantidad total de productos
+- **total_monto**: Monto total de la compra
+- **fecha_compra**: Timestamp ISO de la compra
+- **estado**: Estado de la compra (completada, pendiente, cancelada)
+- **metodo_pago**: Método de pago utilizado
+- **direccion_entrega**: Dirección de entrega (opcional)
+- **observaciones**: Observaciones adicionales (opcional)
 
 ## Endpoints
 
 ### 1. Registrar Compra
-- **URL**: `POST /compras`
+- **URL**: `POST /compras/registrar`
 - **Headers**: `Authorization: Bearer <token>`
 - **Body**:
 ```json
 {
   "productos": [
     {
-      "codigo": "MED-ABC123",
+      "codigo": "MED-ABC123-DEF456",
       "nombre": "Paracetamol 500mg",
-      "descripcion": "Analgésico y antipirético",
-      "categoria": "Analgésicos",
-      "laboratorio": "Bayer",
-      "precio": 15.50,
+      "precio": 12.50,
       "cantidad": 2
     },
     {
-      "codigo": "MED-DEF456",
+      "codigo": "MED-XYZ789-GHI012",
       "nombre": "Ibuprofeno 400mg",
-      "descripcion": "Antiinflamatorio",
-      "categoria": "Antiinflamatorios",
-      "laboratorio": "Pfizer",
-      "precio": 12.00,
+      "precio": 18.00,
       "cantidad": 1
     }
   ],
-  "metodo_pago": "TARJETA",
-  "direccion_envio": "Av. Lima 123, Breña",
-  "telefono_contacto": "987654321",
-  "notas": "Entregar en horario de oficina",
-  "moneda": "PEN"
+  "metodo_pago": "tarjeta",
+  "direccion_entrega": "Av. Siempre Viva 123, Lima",
+  "observaciones": "Entregar en horario de oficina"
 }
 ```
 - **Respuesta**:
@@ -55,35 +64,59 @@ Este microservicio maneja el registro y gestión de compras de productos farmac�
 {
   "message": "Compra registrada exitosamente",
   "compra": {
-    "codigo_compra": "COMP-1234567890-ABC12345",
-    "total_compra": 43.00,
-    "total_productos": 2,
-    "total_cantidad": 3,
-    "estado": "COMPLETADA",
-    "fecha_compra": "2025-06-12T10:30:00Z"
+    "tenant_id": "inkafarma",
+    "codigo_compra": "COM-1718123456-A7B9C2D4",
+    "email_usuario": "usuario@email.com",
+    "nombre_usuario": "Juan Pérez",
+    "productos": [...],
+    "total_productos": 3,
+    "total_monto": 43.00,
+    "fecha_compra": "2025-06-15T10:30:00.000Z",
+    "estado": "completada",
+    "metodo_pago": "tarjeta",
+    "direccion_entrega": "Av. Siempre Viva 123, Lima",
+    "observaciones": "Entregar en horario de oficina"
   }
 }
 ```
 
 ### 2. Listar Compras del Usuario
-- **URL**: `GET /compras`
+- **URL**: `GET /compras/listar`
 - **Headers**: `Authorization: Bearer <token>`
 - **Query Parameters**:
-  - `limit`: Número de compras por página (default: 20)
-  - `lastKey`: Clave para paginación
+  - `limit` (opcional): Número de compras por página (default: 20, máximo: 100)
+  - `lastKey` (opcional): Clave para paginación (base64 encoded)
 - **Respuesta**:
 ```json
 {
   "compras": [...],
-  "count": 5,
-  "lastEvaluatedKey": "encoded_key_for_next_page"
+  "count": 20,
+  "nextKey": "base64_encoded_key",
+  "hasMore": true
 }
 ```
 
-### 3. Obtener Detalle de Compra
-- **URL**: `GET /compras/{codigo_compra}`
+### 3. Buscar Compra por Código
+- **URL**: `GET /compras/buscar/{codigo}`
 - **Headers**: `Authorization: Bearer <token>`
-- **Ejemplo**: `GET /compras/COMP-1234567890-ABC12345`
+- **Respuesta**:
+```json
+{
+  "compra": {
+    "tenant_id": "inkafarma",
+    "codigo_compra": "COM-1718123456-A7B9C2D4",
+    "email_usuario": "usuario@email.com",
+    "nombre_usuario": "Juan Pérez",
+    "productos": [...],
+    "total_productos": 3,
+    "total_monto": 43.00,
+    "fecha_compra": "2025-06-15T10:30:00.000Z",
+    "estado": "completada",
+    "metodo_pago": "tarjeta",
+    "direccion_entrega": "Av. Siempre Viva 123, Lima"
+  }
+}
+```
 
 ### 4. Estadísticas de Compras
 - **URL**: `GET /compras/estadisticas`
@@ -92,108 +125,71 @@ Este microservicio maneja el registro y gestión de compras de productos farmac�
 ```json
 {
   "total_compras": 15,
-  "total_gastado": 450.75,
-  "total_productos_comprados": 42,
-  "compra_promedio": 30.05,
-  "ultima_compra": {
-    "codigo": "COMP-1234567890-ABC12345",
-    "fecha": "2025-06-12T10:30:00Z",
-    "total": 43.00
-  },
-  "categorias_favoritas": [
-    {"categoria": "Analgésicos", "cantidad": 15},
-    {"categoria": "Vitaminas", "cantidad": 12}
-  ],
-  "laboratorios_favoritos": [
-    {"laboratorio": "Bayer", "cantidad": 18},
-    {"laboratorio": "Pfizer", "cantidad": 10}
-  ]
-}
-```
-
-## Estructura de Datos - Compras
-
-### Campos de la Compra
-- `tenant_id`: Identificador del inquilino
-- `codigo_compra`: Código único de la compra (auto-generado)
-- `usuario_id`: ID del usuario que realizó la compra
-- `productos`: Array de productos comprados con detalles
-- `total_productos`: Cantidad de tipos de productos diferentes
-- `total_cantidad`: Cantidad total de productos (suma de cantidades)
-- `total_compra`: Monto total de la compra
-- `moneda`: Moneda de la transacción (default: PEN)
-- `estado`: Estado de la compra (COMPLETADA, PENDIENTE, CANCELADA)
-- `metodo_pago`: Método de pago utilizado
-- `direccion_envio`: Dirección de entrega
-- `telefono_contacto`: Teléfono de contacto
-- `notas`: Notas adicionales de la compra
-- `fecha_compra`: Timestamp de la compra
-- `fecha_creacion`: Timestamp de creación del registro
-- `fecha_actualizacion`: Timestamp de última actualización
-- `activo`: Estado del registro
-
-### Estructura de Producto en Compra
-```json
-{
-  "codigo": "MED-ABC123",
-  "nombre": "Paracetamol 500mg",
-  "descripcion": "Analgésico y antipirético",
-  "categoria": "Analgésicos",
-  "laboratorio": "Bayer",
-  "precio": 15.50,
-  "cantidad": 2,
-  "subtotal": 31.00
+  "total_gastado": 856.50,
+  "total_productos_comprados": 45,
+  "promedio_por_compra": 57.10,
+  "primera_compra": "2025-05-01T08:15:00.000Z",
+  "ultima_compra": "2025-06-15T10:30:00.000Z"
 }
 ```
 
 ## Instalación y Despliegue
 
 ### Prerrequisitos
-- Python 3.9+
-- AWS CLI configurado
-- Serverless Framework
-- pip (Python package manager)
+- Node.js 18+
+- Python 3.11+
+- AWS CLI configurado con credenciales válidas
+- Serverless Framework (`npm install -g serverless`)
+- Token JWT válido del microservicio de usuarios
+- Permisos AWS para crear recursos (DynamoDB, Lambda, IAM)
+
+### Variables de Entorno
+
+El sistema utiliza las siguientes variables de entorno (configuradas automáticamente):
+
+- `TABLE_NAME`: `{stage}-t_compras` (auto-generado por stage)
+- `JWT_SECRET`: `mi-super-secreto-jwt-2025`
 
 ### Comandos de Despliegue
 
 ```bash
-# Instalar dependencias Python
-pip install -r requirements.txt
-
-# Instalar Serverless (si no está instalado)
-npm install -g serverless
+# Instalar dependencias
+npm install
 
 # Desplegar a desarrollo
 npm run deploy-dev
 
-# Desplegar a testing
+# Desplegar a testing  
 npm run deploy-test
 
 # Desplegar a producción
 npm run deploy-prod
 
+# Eliminar despliegue
+npm run remove-dev
+npm run remove-test  
+npm run remove-prod
+
 # Ver información del despliegue
 npm run info
 
-# Ver logs de una función específica
-npm run logs registrar-compra
+# Ver logs en tiempo real
+npm run logs-registrar
+npm run logs-listar
+npm run logs-buscar
+npm run logs-estadisticas
 ```
 
 ## Estructura del Proyecto
 
 ```
 api-compras/
-├── main.py             # Funciones Lambda
-├── serverless.yml      # Configuración Serverless
+├── compras.py          # Funciones Lambda principales
+├── serverless.yml      # Configuración Serverless Framework
 ├── requirements.txt    # Dependencias Python
-├── package.json       # Scripts de despliegue
-└── README.md          # Documentación
+├── package.json       # Configuración del proyecto y scripts
+└── README.md          # Documentación del proyecto
 ```
-
-## Variables de Entorno
-
-- `TABLE_NAME`: Nombre de la tabla DynamoDB (auto-generado por stage)
-- `JWT_SECRET`: Secreto para validar tokens JWT (debe coincidir con api-usuarios)
 
 ## Tabla DynamoDB
 
@@ -201,103 +197,105 @@ api-compras/
 
 **Schema**:
 - **Partition Key**: `tenant_id` (String)
-- **Sort Key**: `codigo_compra` (String)
+- **Sort Key**: `codigo_compra` (String)  
+- **Streams**: Habilitado con NEW_AND_OLD_IMAGES
+- **Billing**: PAY_PER_REQUEST
 
-**Características**:
-- DynamoDB Streams habilitado (NEW_AND_OLD_IMAGES)
-- Global Secondary Indexes:
-  - `usuario_id-fecha_compra-index`: Para consultas por usuario
-  - `tenant_id-fecha_compra-index`: Para consultas por tenant
-- Billing Mode: PAY_PER_REQUEST
+**Campos**:
+- `tenant_id`: Identificador del inquilino (extraído del JWT)
+- `codigo_compra`: Código único de la compra (auto-generado formato COM-timestamp-random)
+- `email_usuario`: Email del usuario que realizó la compra
+- `nombre_usuario`: Nombre del usuario
+- `productos`: Array de productos con código, nombre, precio, cantidad y subtotal
+- `total_productos`: Cantidad total de productos en la compra
+- `total_monto`: Monto total de la compra (Decimal)
+- `fecha_compra`: Timestamp ISO de la compra
+- `estado`: Estado de la compra (String)
+- `metodo_pago`: Método de pago utilizado
+- `direccion_entrega`: Dirección de entrega (opcional)
+- `observaciones`: Observaciones adicionales (opcional)
+
+## Validaciones
+
+### Estructura de Productos
+Cada producto en la compra debe tener:
+- `codigo`: Código del producto (requerido)
+- `nombre`: Nombre del producto (requerido)
+- `precio`: Precio unitario (requerido, mayor a 0)
+- `cantidad`: Cantidad comprada (requerido, entero mayor a 0)
+
+### Cálculos Automáticos
+- `subtotal`: Se calcula automáticamente como precio × cantidad
+- `total_productos`: Suma de todas las cantidades
+- `total_monto`: Suma de todos los subtotales
+
+### Validaciones de Datos
+- Campos requeridos validados en registro
+- Tipos de datos validados (números, enteros, strings)
+- Precios y cantidades deben ser mayores a 0
+- Código de compra validado en búsqueda
+- Conversión automática de Decimal para compatibilidad JSON
 
 ## Seguridad
 
-- Todos los endpoints requieren token JWT válido
-- Validación de tenant_id desde el token
-- Aislamiento de datos por tenant y usuario
-- Los usuarios solo pueden ver sus propias compras
-- CORS configurado para frontend
+### Autenticación JWT
+- Todos los endpoints requieren token JWT válido en header `Authorization: Bearer <token>`
+- Soporte para header `authorization` (minúscula) como fallback
+- Validación de expiración y firma del token
+- Extracción automática de información del usuario desde payload JWT
 
-## Ejemplos de Uso
+### Multi-tenancy
+- Aislamiento completo de datos por `tenant_id`
+- Todas las operaciones filtradas automáticamente por tenant
+- Usuarios solo pueden ver sus propias compras
 
-### Registrar una Compra
-```bash
-curl -X POST https://tu-api-url/compras \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "productos": [
-      {
-        "codigo": "MED-ABC123",
-        "nombre": "Paracetamol 500mg",
-        "descripcion": "Analgésico",
-        "categoria": "Analgésicos",
-        "laboratorio": "Bayer",
-        "precio": 15.50,
-        "cantidad": 2
-      }
-    ],
-    "metodo_pago": "EFECTIVO",
-    "direccion_envio": "Av. Lima 123",
-    "telefono_contacto": "987654321"
-  }'
+### Filtros de Seguridad
+- Usuarios solo pueden acceder a sus propias compras
+- Validación de pertenencia en búsqueda por código
+- Estadísticas calculadas solo con compras del usuario autenticado
+
+### CORS y Headers
+- CORS habilitado para todos los orígenes (`*`)
+- Headers permitidos: `Content-Type`, `X-Amz-Date`, `Authorization`, `X-Api-Key`, `X-Amz-Security-Token`
+- Métodos permitidos: `GET`, `POST`, `OPTIONS`
+
+## Códigos de Estado HTTP
+
+- **200**: Operación exitosa (GET)
+- **201**: Compra registrada exitosamente (POST)
+- **400**: Datos inválidos, faltantes o formato incorrecto
+- **401**: Token inválido, expirado o faltante
+- **404**: Compra no encontrada
+- **500**: Error interno del servidor
+
+## Generación de Códigos
+
+Los códigos de compra se generan automáticamente con el formato:
+```
+COM-{timestamp}-{random_8_chars}
 ```
 
-### Listar Compras
-```bash
-curl -X GET "https://tu-api-url/compras?limit=10" \
-  -H "Authorization: Bearer <token>"
-```
+Ejemplo: `COM-1718123456-A7B9C2D4`
 
-### Obtener Detalle de Compra
-```bash
-curl -X GET https://tu-api-url/compras/COMP-1234567890-ABC12345 \
-  -H "Authorization: Bearer <token>"
-```
+## Manejo de Errores
 
-### Obtener Estadísticas
-```bash
-curl -X GET https://tu-api-url/compras/estadisticas \
-  -H "Authorization: Bearer <token>"
-```
+### Errores Comunes
+- **Token JWT**: Validación de formato, expiración y firma
+- **JSON malformado**: Validación de sintaxis en request body
+- **Campos faltantes**: Validación de campos requeridos en productos
+- **Tipos de datos**: Validación de números, enteros, strings
+- **Lógica de negocio**: Precios y cantidades deben ser positivos
+- **Paginación**: Validación de parámetros lastKey
 
-## Integración con DynamoDB Streams
+### Logs
+- Todos los errores se registran en CloudWatch Logs
+- Información de debug disponible para troubleshooting
+- Separación de logs por función Lambda
 
-La tabla tiene DynamoDB Streams habilitado para:
-- Sincronización con S3 para análisis de datos
-- Generación de archivos CSV/JSON para Athena
-- Auditoría de transacciones
-- Integración con sistemas de facturación
+## DynamoDB Streams
 
-## Métodos de Pago Soportados
-
-- EFECTIVO
-- TARJETA
-- TRANSFERENCIA
-- YAPE
-- PLIN
-- PAYPAL
-
-## Estados de Compra
-
-- **COMPLETADA**: Compra exitosa y confirmada
-- **PENDIENTE**: Compra registrada pero pendiente de confirmación
-- **CANCELADA**: Compra cancelada por el usuario o sistema
-
-## Validaciones Implementadas
-
-- Validación de token JWT en todos los endpoints
-- Verificación de campos requeridos en productos
-- Validación de tipos de datos (precios, cantidades)
-- Cálculo automático de subtotales y total
-- Verificación de permisos por usuario y tenant
-- Validación de formato de códigos de producto
-
-## Consideraciones para Producción
-
-- Implementar validación de stock en tiempo real
-- Integrar con sistema de pagos real
-- Añadir notificaciones por email/SMS
-- Implementar sistema de reembolsos
-- Añadir seguimiento de envíos
-- Implementar límites de compra por usuario
+El microservicio tiene habilitado DynamoDB Streams con vista `NEW_AND_OLD_IMAGES` para:
+- Capturar cambios en tiempo real
+- Integración con Lambda de ingesta para ciencia de datos
+- Envío de datos a S3 en formato CSV/JSON
+- Análisis con Athena y Glue
