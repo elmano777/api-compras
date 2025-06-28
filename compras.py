@@ -170,40 +170,46 @@ def listar_compras(event, context):
         fecha_desde = query_params.get('fecha_desde')
         fecha_hasta = query_params.get('fecha_hasta')
         
-        # Configurar parámetros de scan
+        # CORRECCIÓN: Usar el limit directamente en el scan
         scan_params = {
-            'Limit': limit * 10  # Escanear más elementos para compensar filtros
+            'Limit': limit  # ← AQUÍ ESTABA EL PROBLEMA: era limit * 10
         }
         
         # Si hay lastKey para paginación
         if last_key:
             try:
-                # El lastKey debe venir codificado en base64 o como JSON string
                 import base64
                 decoded_key = json.loads(base64.b64decode(last_key).decode('utf-8'))
                 scan_params['ExclusiveStartKey'] = decoded_key
             except:
-                # Si falla la decodificación, continúa sin lastKey
                 pass
         
-        # Realizar el scan inicial
+        # Si hay filtros, necesitamos usar FilterExpression de DynamoDB
+        filter_expressions = []
+        expression_values = {}
+        
+        if tenant_id:
+            filter_expressions.append('tenant_id = :tenant_id')
+            expression_values[':tenant_id'] = tenant_id
+        
+        if fecha_desde:
+            filter_expressions.append('fecha_compra >= :fecha_desde')
+            expression_values[':fecha_desde'] = fecha_desde
+            
+        if fecha_hasta:
+            filter_expressions.append('fecha_compra <= :fecha_hasta')
+            expression_values[':fecha_hasta'] = fecha_hasta
+        
+        # Aplicar filtros si existen
+        if filter_expressions:
+            scan_params['FilterExpression'] = ' AND '.join(filter_expressions)
+            scan_params['ExpressionAttributeValues'] = expression_values
+        
+        # Realizar el scan
         response = table.scan(**scan_params)
         
         # Procesar resultados
         items = response.get('Items', [])
-        
-        # Aplicar filtros manualmente después del scan
-        if tenant_id:
-            items = [item for item in items if item.get('tenant_id') == tenant_id]
-        
-        if fecha_desde:
-            items = [item for item in items if item.get('fecha_compra', '') >= fecha_desde]
-            
-        if fecha_hasta:
-            items = [item for item in items if item.get('fecha_compra', '') <= fecha_hasta]
-        
-        # Aplicar limit después de los filtros
-        items = items[:limit]
         
         # Convertir Decimal a float para JSON
         items = decimal_to_float(items)
@@ -238,7 +244,6 @@ def listar_compras(event, context):
         }
         
     except ValueError as e:
-        # Error en parámetros (ej: limit no es número)
         return {
             'statusCode': 400,
             'headers': {
