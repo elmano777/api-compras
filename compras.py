@@ -154,76 +154,124 @@ def registrar_compra(event, context):
         return lambda_response(500, {'error': 'Error interno del servidor'})
 
 def listar_compras(event, context):
-    """Función para listar todas las compras de un usuario"""
+    """
+    Lista las compras con soporte para limit, offset y filtros
+    """
     try:
-        # Validar token y extraer usuario
-        usuario, error = extract_user_from_token(event)
-        if error:
-            return lambda_response(401, {'error': error})
+        # Obtener parámetros de query
+        query_params = event.get('queryStringParameters') or {}
         
         # Parámetros de paginación
-        query_params = event.get('queryStringParameters') or {}
-        limit = int(query_params.get('limit', 20))
-        last_key = query_params.get('lastKey')
+        limit = int(query_params.get('limit', 10))  # Default 10 items
+        last_key = query_params.get('lastKey')  # Para paginación
         
-        # Validar límite
-        if limit > 100:
-            limit = 100
-        elif limit < 1:
-            limit = 20
+        # Parámetros de filtro (opcionales)
+        tenant_id = query_params.get('tenant_id')
+        fecha_desde = query_params.get('fecha_desde')
+        fecha_hasta = query_params.get('fecha_hasta')
         
-        # Preparar consulta
-        query_params_dynamodb = {
-            'KeyConditionExpression': 'tenant_id = :tenant_id',
-            'ExpressionAttributeValues': {
-                ':tenant_id': usuario['tenant_id']
-            },
-            'ScanIndexForward': False,  # Ordenar por fecha descendente
+        # Configurar parámetros de scan
+        scan_params = {
             'Limit': limit
         }
         
-        # Filtrar por usuario específico
-        query_params_dynamodb['FilterExpression'] = 'email_usuario = :email'
-        query_params_dynamodb['ExpressionAttributeValues'][':email'] = usuario['email']
-        
-        # Paginación
+        # Si hay lastKey para paginación
         if last_key:
             try:
+                # El lastKey debe venir codificado en base64 o como JSON string
                 import base64
-                decoded_key = json.loads(base64.b64decode(last_key).decode())
-                query_params_dynamodb['ExclusiveStartKey'] = decoded_key
-            except Exception as e:
-                print(f"Error decodificando lastKey: {str(e)}")
-                return lambda_response(400, {'error': 'lastKey inválido'})
+                decoded_key = json.loads(base64.b64decode(last_key).decode('utf-8'))
+                scan_params['ExclusiveStartKey'] = decoded_key
+            except:
+                # Si falla la decodificación, continúa sin lastKey
+                pass
         
-        # Ejecutar consulta
-        response = table.query(**query_params_dynamodb)
+        # Filtros opcionales
+        filter_expressions = []
+        expression_values = {}
+        
+        if tenant_id:
+            filter_expressions.append('tenant_id = :tenant_id')
+            expression_values[':tenant_id'] = tenant_id
+        
+        if fecha_desde:
+            filter_expressions.append('fecha_compra >= :fecha_desde')
+            expression_values[':fecha_desde'] = fecha_desde
+            
+        if fecha_hasta:
+            filter_expressions.append('fecha_compra <= :fecha_hasta')
+            expression_values[':fecha_hasta'] = fecha_hasta
+        
+        # Aplicar filtros si existen
+        if filter_expressions:
+            scan_params['FilterExpression'] = ' AND '.join(filter_expressions)
+            scan_params['ExpressionAttributeValues'] = expression_values
+        
+        # Realizar el scan
+        response = table.scan(**scan_params)
         
         # Procesar resultados
-        compras = decimal_to_float(response.get('Items', []))
+        items = response.get('Items', [])
+        
+        # Convertir Decimal a float para JSON
+        items = decimal_to_float(items)
         
         # Preparar respuesta
         result = {
-            'compras': compras,
-            'count': len(compras)
+            'compras': items,
+            'count': len(items),
+            'scannedCount': response.get('ScannedCount', 0)
         }
         
-        # Paginación
+        # Agregar lastKey para paginación si existe
         if 'LastEvaluatedKey' in response:
             import base64
-            next_key = base64.b64encode(
-                json.dumps(response['LastEvaluatedKey']).encode()
-            ).decode()
-            result['nextKey'] = next_key
+            last_key_encoded = base64.b64encode(
+                json.dumps(response['LastEvaluatedKey'], default=str).encode('utf-8')
+            ).decode('utf-8')
+            result['lastKey'] = last_key_encoded
             result['hasMore'] = True
         else:
             result['hasMore'] = False
         
-        return lambda_response(200, result)
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,OPTIONS'
+            },
+            'body': json.dumps(result, ensure_ascii=False)
+        }
+        
+    except ValueError as e:
+        # Error en parámetros (ej: limit no es número)
+        return {
+            'statusCode': 400,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'error': 'Parámetros inválidos',
+                'message': str(e)
+            }, ensure_ascii=False)
+        }
         
     except Exception as e:
-        print(f"Error listando compras: {str(e)}")
-        return lambda_response(500, {'error': 'Error interno del servidor'})
+        print(f"Error en listar_compras: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'error': 'Error interno del servidor',
+                'message': str(e)
+            }, ensure_ascii=False)
+        }
 
 def buscar_compra(event, context):
     """Función para buscar una compra específica por código"""
