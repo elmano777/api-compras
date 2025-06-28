@@ -227,19 +227,79 @@ def listar_compras(event, context):
 
 def buscar_compra(event, context):
     """Función para buscar una compra específica por código"""
+    print('Evento completo:', json.dumps(event, indent=2, default=str))  # Debug
+    
     try:
         # Validar token y extraer usuario
         usuario, error = extract_user_from_token(event)
         if error:
             return lambda_response(401, {'error': error})
         
-        # Extraer código de compra del path
-        codigo_compra = event.get('pathParameters', {}).get('codigo')
+        # Múltiples formas de obtener el código - VERSIÓN CORREGIDA
+        codigo_compra = None
+        
+        # Opción 1: Desde pathParameters (estructura estándar de API Gateway)
+        if event.get('pathParameters') and event['pathParameters'].get('codigo'):
+            codigo_compra = event['pathParameters']['codigo']
+        
+        # Opción 2: Desde path (estructura personalizada)
+        if not codigo_compra and event.get('path') and hasattr(event['path'], 'codigo'):
+            codigo_compra = event['path'].codigo
+        
+        # Opción 3: Desde queryStringParameters (fallback)
+        if not codigo_compra and event.get('queryStringParameters') and event['queryStringParameters'].get('codigo'):
+            codigo_compra = event['queryStringParameters']['codigo']
+        
+        # Opción 4: Desde resource path parsing (backup)
+        if not codigo_compra and event.get('resource'):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', event['resource'])
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        # Opción 5: Desde requestPath parsing
+        if not codigo_compra and event.get('requestPath'):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', event['requestPath'])
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        # Opción 6: Desde requestContext (otro fallback)
+        if not codigo_compra and event.get('requestContext') and event['requestContext'].get('resourcePath'):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', event['requestContext']['resourcePath'])
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        # Opción 7: Parsing manual del path completo
+        if not codigo_compra and event.get('path'):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', str(event['path']))
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        print(f'Código extraído: {codigo_compra}')  # Debug
+        
         if not codigo_compra:
-            return lambda_response(400, {'error': 'Código de compra requerido'})
+            print('PathParameters:', event.get('pathParameters'))
+            print('Path:', event.get('path'))
+            print('Resource:', event.get('resource'))
+            print('RequestPath:', event.get('requestPath'))
+            print('RequestContext:', event.get('requestContext'))
+            return lambda_response(400, {
+                'error': 'Código de compra requerido',
+                'debug': {
+                    'pathParameters': event.get('pathParameters'),
+                    'path': str(event.get('path')),
+                    'resource': event.get('resource'),
+                    'requestPath': event.get('requestPath')
+                }
+            })
         
         # Buscar compra
         try:
+            print(f'Buscando compra con tenant_id: {usuario["tenant_id"]}, codigo_compra: {codigo_compra}')  # Debug
+            
             response = table.get_item(
                 Key={
                     'tenant_id': usuario['tenant_id'],
@@ -264,7 +324,7 @@ def buscar_compra(event, context):
             })
             
         except Exception as e:
-            print(f"Error buscando compra: {str(e)}")
+            print(f"Error buscando compra en DynamoDB: {str(e)}")
             return lambda_response(500, {'error': 'Error interno del servidor'})
         
     except Exception as e:
