@@ -172,7 +172,7 @@ def listar_compras(event, context):
         
         # Configurar parámetros de scan
         scan_params = {
-            'Limit': limit
+            'Limit': limit * 10  # Escanear más elementos para compensar filtros
         }
         
         # Si hay lastKey para paginación
@@ -186,32 +186,24 @@ def listar_compras(event, context):
                 # Si falla la decodificación, continúa sin lastKey
                 pass
         
-        # Filtros opcionales
-        filter_expressions = []
-        expression_values = {}
-        
-        if tenant_id:
-            filter_expressions.append('tenant_id = :tenant_id')
-            expression_values[':tenant_id'] = tenant_id
-        
-        if fecha_desde:
-            filter_expressions.append('fecha_compra >= :fecha_desde')
-            expression_values[':fecha_desde'] = fecha_desde
-            
-        if fecha_hasta:
-            filter_expressions.append('fecha_compra <= :fecha_hasta')
-            expression_values[':fecha_hasta'] = fecha_hasta
-        
-        # Aplicar filtros si existen
-        if filter_expressions:
-            scan_params['FilterExpression'] = ' AND '.join(filter_expressions)
-            scan_params['ExpressionAttributeValues'] = expression_values
-        
-        # Realizar el scan
+        # Realizar el scan inicial
         response = table.scan(**scan_params)
         
         # Procesar resultados
         items = response.get('Items', [])
+        
+        # Aplicar filtros manualmente después del scan
+        if tenant_id:
+            items = [item for item in items if item.get('tenant_id') == tenant_id]
+        
+        if fecha_desde:
+            items = [item for item in items if item.get('fecha_compra', '') >= fecha_desde]
+            
+        if fecha_hasta:
+            items = [item for item in items if item.get('fecha_compra', '') <= fecha_hasta]
+        
+        # Aplicar limit después de los filtros
+        items = items[:limit]
         
         # Convertir Decimal a float para JSON
         items = decimal_to_float(items)
