@@ -226,64 +226,80 @@ def listar_compras(event, context):
         return lambda_response(500, {'error': 'Error interno del servidor'})
 
 def buscar_compra(event, context):
-    """Función para buscar una compra específica por código - VERSIÓN CORREGIDA"""
+    """Función para buscar una compra específica por código"""
+    print('Evento completo:', json.dumps(event, indent=2, default=str))  # Debug
     
     try:
-        # Debug: Imprimir el evento completo
-        print('=== DEBUG: Evento completo ===')
-        print(json.dumps(event, indent=2, default=str))
-        
         # Validar token y extraer usuario
         usuario, error = extract_user_from_token(event)
         if error:
-            print(f'Error de autenticación: {error}')
             return lambda_response(401, {'error': error})
         
-        print(f'Usuario autenticado: {usuario}')
-        
-        # EXTRACCIÓN SIMPLIFICADA DEL CÓDIGO
+        # CORRECCIÓN: Múltiples formas de obtener el código
         codigo_compra = None
         
-        # Método 1: pathParameters (más común en API Gateway)
+        # Opción 1: Desde pathParameters (estructura estándar de API Gateway)
         if event.get('pathParameters') and event['pathParameters'].get('codigo'):
             codigo_compra = event['pathParameters']['codigo']
-            print(f'Código extraído de pathParameters: {codigo_compra}')
         
-        # Método 2: Parsing manual del path
-        elif event.get('path'):
-            import re
-            path = str(event['path'])
-            print(f'Path completo: {path}')
-            
-            # Buscar patrón /compras/buscar/CODIGO
-            match = re.search(r'/compras/buscar/([^/?]+)', path)
-            if match:
-                codigo_compra = match.group(1)
-                print(f'Código extraído del path: {codigo_compra}')
+        # Opción 2: Desde path como objeto (ESTE ES TU CASO)
+        elif event.get('path') and isinstance(event['path'], dict) and event['path'].get('codigo'):
+            codigo_compra = event['path']['codigo']
         
-        # Método 3: queryStringParameters como fallback
+        # Opción 3: Desde queryStringParameters (fallback)
         elif event.get('queryStringParameters') and event['queryStringParameters'].get('codigo'):
             codigo_compra = event['queryStringParameters']['codigo']
-            print(f'Código extraído de queryStringParameters: {codigo_compra}')
+        
+        # Opción 4: Desde resource path parsing (backup)
+        elif event.get('resource'):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', event['resource'])
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        # Opción 5: Desde requestPath parsing
+        elif event.get('requestPath'):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', event['requestPath'])
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        # Opción 6: Desde requestContext (otro fallback)
+        elif event.get('requestContext') and event['requestContext'].get('resourcePath'):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', event['requestContext']['resourcePath'])
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        # Opción 7: Parsing manual del path como string
+        elif event.get('path') and isinstance(event['path'], str):
+            import re
+            matches = re.search(r'/compras/buscar/([^/]+)', str(event['path']))
+            if matches:
+                codigo_compra = matches.group(1)
+        
+        print(f'Código extraído: {codigo_compra}')  # Debug
         
         if not codigo_compra:
-            print('ERROR: No se pudo extraer el código de compra')
+            print('PathParameters:', event.get('pathParameters'))
+            print('Path:', event.get('path'))
+            print('Resource:', event.get('resource'))
+            print('RequestPath:', event.get('requestPath'))
+            print('RequestContext:', event.get('requestContext'))
             return lambda_response(400, {
                 'error': 'Código de compra requerido',
-                'debug_info': {
+                'debug': {
                     'pathParameters': event.get('pathParameters'),
-                    'path': event.get('path'),
-                    'queryStringParameters': event.get('queryStringParameters')
+                    'path': str(event.get('path')),
+                    'resource': event.get('resource'),
+                    'requestPath': event.get('requestPath')
                 }
             })
         
-        print(f'=== Buscando compra ===')
-        print(f'tenant_id: {usuario["tenant_id"]}')
-        print(f'codigo_compra: {codigo_compra}')
-        print(f'email_usuario: {usuario["email"]}')
-        
-        # Buscar compra en DynamoDB
+        # Buscar compra
         try:
+            print(f'Buscando compra con tenant_id: {usuario["tenant_id"]}, codigo_compra: {codigo_compra}')  # Debug
+            
             response = table.get_item(
                 Key={
                     'tenant_id': usuario['tenant_id'],
@@ -291,50 +307,14 @@ def buscar_compra(event, context):
                 }
             )
             
-            print(f'Respuesta de DynamoDB: {response}')
-            
             if 'Item' not in response:
-                print('Compra no encontrada en DynamoDB')
-                
-                # DEBUG: Listar todas las compras del usuario para verificar
-                print('=== DEBUG: Listando todas las compras del usuario ===')
-                all_purchases = table.query(
-                    KeyConditionExpression='tenant_id = :tenant_id',
-                    FilterExpression='email_usuario = :email',
-                    ExpressionAttributeValues={
-                        ':tenant_id': usuario['tenant_id'],
-                        ':email': usuario['email']
-                    }
-                )
-                
-                print(f'Total compras encontradas: {len(all_purchases.get("Items", []))}')
-                for item in all_purchases.get('Items', []):
-                    print(f'- Código: {item.get("codigo_compra")}, Email: {item.get("email_usuario")}')
-                
-                return lambda_response(404, {
-                    'error': 'Compra no encontrada',
-                    'debug_info': {
-                        'codigo_buscado': codigo_compra,
-                        'tenant_id': usuario['tenant_id'],
-                        'email_usuario': usuario['email'],
-                        'total_compras_usuario': len(all_purchases.get('Items', []))
-                    }
-                })
+                return lambda_response(404, {'error': 'Compra no encontrada'})
             
             compra = response['Item']
-            print(f'Compra encontrada: {compra.get("codigo_compra")}')
             
             # Verificar que la compra pertenece al usuario
             if compra.get('email_usuario') != usuario['email']:
-                print(f'La compra pertenece a otro usuario: {compra.get("email_usuario")}')
-                return lambda_response(404, {
-                    'error': 'Compra no encontrada',
-                    'debug_info': {
-                        'motivo': 'La compra pertenece a otro usuario',
-                        'email_compra': compra.get('email_usuario'),
-                        'email_usuario': usuario['email']
-                    }
-                })
+                return lambda_response(404, {'error': 'Compra no encontrada'})
             
             # Convertir Decimals y responder
             compra_respuesta = decimal_to_float(compra)
@@ -344,18 +324,12 @@ def buscar_compra(event, context):
             })
             
         except Exception as e:
-            print(f"Error consultando DynamoDB: {str(e)}")
-            return lambda_response(500, {
-                'error': 'Error consultando base de datos',
-                'debug_info': str(e)
-            })
+            print(f"Error buscando compra en DynamoDB: {str(e)}")
+            return lambda_response(500, {'error': 'Error interno del servidor'})
         
     except Exception as e:
-        print(f"Error general en buscar_compra: {str(e)}")
-        return lambda_response(500, {
-            'error': 'Error interno del servidor',
-            'debug_info': str(e)
-        })
+        print(f"Error en buscar_compra: {str(e)}")
+        return lambda_response(500, {'error': 'Error interno del servidor'})
 
 def obtener_estadisticas_compras(event, context):
     """Función para obtener estadísticas de compras del usuario"""
