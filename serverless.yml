@@ -29,7 +29,7 @@ functions:
           integration: lambda
   
   listar-compras:
-    handler: compras.listar_compras_simple
+    handler: compras.listar_compras
     events:
       - http:
           path: /compras/listar
