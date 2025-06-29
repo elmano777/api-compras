@@ -153,144 +153,27 @@ def registrar_compra(event, context):
         print(f"Error registrando compra: {str(e)}")
         return lambda_response(500, {'error': 'Error interno del servidor'})
 
-def listar_compras(event, context):
-    """
-    Lista las compras con soporte para limit real
-    """
+def listar_compras_simple(event, context):
     try:
-        # Obtener parámetros de query
         query_params = event.get('queryStringParameters') or {}
-        
-        # Parámetros de paginación
         limit = int(query_params.get('limit', 10))
-        last_key = query_params.get('lastKey')
         
-        # Parámetros de filtro
-        tenant_id = query_params.get('tenant_id')
-        fecha_desde = query_params.get('fecha_desde')
-        fecha_hasta = query_params.get('fecha_hasta')
+        # Hacer scan completo (malo para tablas grandes)
+        response = table.scan()
+        items = response.get('Items', [])
         
-        # Configurar filtros de DynamoDB
-        filter_expressions = []
-        expression_values = {}
+        # Aplicar limit directamente
+        items = items[:limit]
         
-        if tenant_id:
-            filter_expressions.append('tenant_id = :tenant_id')
-            expression_values[':tenant_id'] = tenant_id
+        # Convertir y devolver
+        items = decimal_to_float(items)
         
-        if fecha_desde:
-            filter_expressions.append('fecha_compra >= :fecha_desde')
-            expression_values[':fecha_desde'] = fecha_desde
-            
-        if fecha_hasta:
-            filter_expressions.append('fecha_compra <= :fecha_hasta')
-            expression_values[':fecha_hasta'] = fecha_hasta
-        
-        # Recolectar elementos hasta alcanzar el limit
-        items_collected = []
-        scan_params = {}
-        
-        # Configurar ExclusiveStartKey si existe
-        if last_key:
-            try:
-                import base64
-                decoded_key = json.loads(base64.b64decode(last_key).decode('utf-8'))
-                scan_params['ExclusiveStartKey'] = decoded_key
-            except:
-                pass
-        
-        # Aplicar filtros si existen
-        if filter_expressions:
-            scan_params['FilterExpression'] = ' AND '.join(filter_expressions)
-            scan_params['ExpressionAttributeValues'] = expression_values
-        
-        # Escanear iterativamente hasta conseguir suficientes elementos
-        last_evaluated_key = None
-        total_scanned = 0
-        
-        while len(items_collected) < limit:
-            # Configurar límite de scan (más elementos para compensar filtros)
-            scan_params['Limit'] = min(100, (limit - len(items_collected)) * 3)
-            
-            # Realizar scan
-            response = table.scan(**scan_params)
-            
-            # Obtener elementos de esta iteración
-            batch_items = response.get('Items', [])
-            items_collected.extend(batch_items)
-            
-            # Actualizar contadores
-            total_scanned += response.get('ScannedCount', 0)
-            last_evaluated_key = response.get('LastEvaluatedKey')
-            
-            # Si no hay más elementos en la tabla, salir
-            if not last_evaluated_key:
-                break
-                
-            # Configurar para la siguiente iteración
-            scan_params['ExclusiveStartKey'] = last_evaluated_key
-        
-        # Limitar al número exacto solicitado
-        items_collected = items_collected[:limit]
-        
-        # Convertir Decimal a float para JSON
-        items_collected = decimal_to_float(items_collected)
-        
-        # Preparar respuesta
-        result = {
-            'compras': items_collected,
-            'count': len(items_collected),
-            'scannedCount': total_scanned
-        }
-        
-        # Configurar paginación
-        if last_evaluated_key and len(items_collected) == limit:
-            import base64
-            last_key_encoded = base64.b64encode(
-                json.dumps(last_evaluated_key, default=str).encode('utf-8')
-            ).decode('utf-8')
-            result['lastKey'] = last_key_encoded
-            result['hasMore'] = True
-        else:
-            result['hasMore'] = False
-        
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-                'Access-Control-Allow-Methods': 'GET,OPTIONS'
-            },
-            'body': json.dumps(result, ensure_ascii=False)
-        }
-        
-    except ValueError as e:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'error': 'Parámetros inválidos',
-                'message': str(e)
-            }, ensure_ascii=False)
-        }
-        
+        return lambda_response(200, {
+            'compras': items,
+            'count': len(items)
+        })
     except Exception as e:
-        print(f"Error en listar_compras: {str(e)}")
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'error': 'Error interno del servidor',
-                'message': str(e)
-            }, ensure_ascii=False)
-        }
+        return lambda_response(500, {'error': str(e)})
 
 def buscar_compra(event, context):
     """Función para buscar una compra específica por código"""
