@@ -63,13 +63,11 @@ def get_swagger_json(event, context):
                 }
             }
         },
-        "security": [{"bearerAuth": []}],
         "paths": {
             "/compras/registrar": {
                 "post": {
                     "summary": "Registrar compra",
                     "description": "Registra una nueva compra",
-                    "security": [{"bearerAuth": []}],
                     "requestBody": {
                         "required": True,
                         "content": {
@@ -112,7 +110,6 @@ def get_swagger_json(event, context):
                 "get": {
                     "summary": "Listar compras",
                     "description": "Obtiene una lista de compras con filtros y paginación",
-                    "security": [{"bearerAuth": []}],
                     "parameters": [
                         {
                             "name": "limit",
@@ -169,7 +166,6 @@ def get_swagger_json(event, context):
                 "get": {
                     "summary": "Buscar compra por código",
                     "description": "Busca una compra específica por su código",
-                    "security": [{"bearerAuth": []}],
                     "parameters": [
                         {
                             "name": "codigo",
@@ -200,7 +196,6 @@ def get_swagger_json(event, context):
                 "get": {
                     "summary": "Obtener estadísticas de compras",
                     "description": "Devuelve estadísticas de compras del usuario autenticado",
-                    "security": [{"bearerAuth": []}],
                     "responses": {
                         "200": {
                             "description": "Estadísticas de compras",
