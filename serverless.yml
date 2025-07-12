@@ -54,6 +54,24 @@ functions:
           method: get
           cors: true
           integration: lambda
+  
+  swagger-ui:
+    handler: swagger.serve_swagger_ui
+    events:
+      - http:
+          path: /docs
+          method: get
+          cors: true
+          integration: lambda
+      
+  swagger-json:
+    handler: swagger.get_swagger_json
+    events:
+      - http:
+          path: /swagger.json
+          method: get
+          cors: true
+          integration: lambda
 
 resources:
   Resources:
