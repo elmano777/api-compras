@@ -63,6 +63,7 @@ functions:
           method: get
           cors: true
           integration: lambda
+          contentHandling: CONVERT_TO_TEXT
       
   swagger-json:
     handler: swagger.get_swagger_json
