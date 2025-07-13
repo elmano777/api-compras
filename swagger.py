@@ -91,20 +91,28 @@ def serve_swagger_ui(event, context):
 </body>
 </html>'''
         
-        return {
+        # Formato de respuesta para lambda-proxy
+        response = {
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'text/html; charset=utf-8',
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-                'Access-Control-Allow-Methods': 'GET,OPTIONS'
+                'Access-Control-Allow-Methods': 'GET,OPTIONS',
+                'Cache-Control': 'no-cache'
             },
-            'body': html
+            'body': html,
+            'isBase64Encoded': False
         }
+        
+        return response
         
     except Exception as e:
         print(f"Error sirviendo Swagger UI: {str(e)}")
-        return {
+        import traceback
+        traceback.print_exc()
+        
+        error_response = {
             'statusCode': 500,
             'headers': {
                 'Content-Type': 'application/json',
@@ -113,8 +121,11 @@ def serve_swagger_ui(event, context):
             'body': json.dumps({
                 'error': 'Error interno del servidor',
                 'message': str(e)
-            })
+            }),
+            'isBase64Encoded': False
         }
+        
+        return error_response
 
 def get_swagger_json(event, context):
     """Retorna la especificación OpenAPI/Swagger en formato JSON"""

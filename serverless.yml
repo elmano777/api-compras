@@ -62,8 +62,12 @@ functions:
           path: /docs
           method: get
           cors: true
-          integration: lambda
-          contentHandling: CONVERT_TO_TEXT
+          integration: lambda-proxy
+      - http:
+          path: /docs/{proxy+}
+          method: get
+          cors: true
+          integration: lambda-proxy
       
   swagger-json:
     handler: swagger.get_swagger_json
