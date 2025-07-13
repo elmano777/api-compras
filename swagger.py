@@ -201,9 +201,8 @@ def get_swagger_json(event, context):
         
         # Especificación OpenAPI 3.0.0 - Corregida y simplificada
         swagger_spec = {
-            "openapi": "3.1.0",
+            "openapi": "3.0.3",
             "info": {
-                "swagger": "2.0",
                 "title": "API Compras - Microservicio Multi-tenant",
                 "version": "1.0.0",
                 "description": "Microservicio para gestión de compras con soporte multi-tenant usando AWS Lambda y DynamoDB."
