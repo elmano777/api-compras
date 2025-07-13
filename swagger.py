@@ -15,7 +15,8 @@ def serve_swagger_ui(event, context):
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Swagger UI - API Compras</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css" />
+  <link rel="stylesheet"
+      href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css"/>
   <style>
     .swagger-ui .topbar {{ display: none; }}
     .swagger-ui .info {{ margin: 50px 0; }}
@@ -201,7 +202,7 @@ def get_swagger_json(event, context):
         
         # Especificación OpenAPI 3.0.0 - Corregida y simplificada
         swagger_spec = {
-            "openapi": "3.0.3",
+            "openapi": "3.1.0",
             "info": {
                 "title": "API Compras - Microservicio Multi-tenant",
                 "version": "1.0.0",
