@@ -199,26 +199,13 @@ def get_swagger_json(event, context):
         stage = event.get('requestContext', {}).get('stage', 'dev')
         base_url = f"https://{host}/{stage}"
         
+        # Especificación OpenAPI 3.0.0 válida
         swagger_spec = {
             "openapi": "3.0.0",
             "info": {
                 "title": "API Compras - Microservicio Multi-tenant",
-                "description": """
-                Microservicio para gestión de compras con soporte multi-tenant usando AWS Lambda y DynamoDB.
-                
-                ## Autenticación
-                Esta API utiliza JWT Bearer tokens para autenticación. Para usar los endpoints protegidos:
-                1. Obtén un token JWT válido
-                2. Configúralo usando el botón "Establecer Token" arriba
-                3. O incluye el header: `Authorization: Bearer <tu-token>`
-                
-                ## Características
-                - Soporte multi-tenant
-                - Gestión completa de compras
-                - Estadísticas de compras
-                - Arquitectura serverless con AWS Lambda
-                """,
                 "version": "1.0.0",
+                "description": "Microservicio para gestión de compras con soporte multi-tenant usando AWS Lambda y DynamoDB.\n\n## Autenticación\nEsta API utiliza JWT Bearer tokens para autenticación. Para usar los endpoints protegidos:\n1. Obtén un token JWT válido\n2. Configúralo usando el botón 'Establecer Token' arriba\n3. O incluye el header: `Authorization: Bearer <tu-token>`\n\n## Características\n- Soporte multi-tenant\n- Gestión completa de compras\n- Estadísticas de compras\n- Arquitectura serverless con AWS Lambda",
                 "contact": {
                     "name": "Equipo de Desarrollo",
                     "email": "desarrollo@inkafarma.com"
@@ -738,10 +725,13 @@ def get_swagger_json(event, context):
             ]
         }
         
+        # Asegurar que el JSON sea válido
+        json_response = json.dumps(swagger_spec, indent=2, ensure_ascii=False)
+        
         return {
             'statusCode': 200,
             'headers': {
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
                 'Access-Control-Allow-Methods': 'GET,OPTIONS',
@@ -749,7 +739,8 @@ def get_swagger_json(event, context):
                 'Pragma': 'no-cache',
                 'Expires': '0'
             },
-            'body': json.dumps(swagger_spec, indent=2)
+            'body': json_response,
+            'isBase64Encoded': False
         }
         
     except Exception as e:
@@ -766,5 +757,6 @@ def get_swagger_json(event, context):
             'body': json.dumps({
                 'error': 'Error interno del servidor',
                 'message': str(e)
-            })
+            }),
+            'isBase64Encoded': False
         }
