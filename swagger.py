@@ -15,16 +15,17 @@ def serve_swagger_ui(event, context):
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Swagger UI - API Compras</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui.css" />
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css" />
   <style>
     .swagger-ui .topbar {{ display: none; }}
     .swagger-ui .info {{ margin: 50px 0; }}
     .swagger-ui .info .title {{ color: #3b4151; }}
+    .swagger-ui .scheme-container {{ background: #fff; }}
   </style>
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-bundle.js"></script>
   <script>
     window.onload = function() {{
       const ui = SwaggerUIBundle({{
@@ -33,18 +34,19 @@ def serve_swagger_ui(event, context):
         deepLinking: true,
         presets: [
           SwaggerUIBundle.presets.apis,
-          SwaggerUIBundle.SwaggerUIStandalonePreset
+          SwaggerUIBundle.presets.standalone
         ],
         plugins: [
           SwaggerUIBundle.plugins.DownloadUrl
         ],
-        layout: "StandaloneLayout",
+        layout: "BaseLayout",
         defaultModelsExpandDepth: 1,
         defaultModelExpandDepth: 1,
         docExpansion: "list",
         operationsSorter: "alpha",
         tagsSorter: "alpha",
         filter: true,
+        supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
         requestInterceptor: function(request) {{
           const token = localStorage.getItem('authToken');
           if (token) {{
@@ -52,40 +54,99 @@ def serve_swagger_ui(event, context):
           }}
           return request;
         }},
+        responseInterceptor: function(response) {{
+          console.log('Response intercepted:', response);
+          return response;
+        }},
         onComplete: function() {{
           console.log('Swagger UI loaded successfully');
+          
+          // Configurar autorización si existe token
+          const savedToken = localStorage.getItem('authToken');
+          if (savedToken) {{
+            ui.preauthorizeApiKey('bearerAuth', 'Bearer ' + savedToken);
+          }}
+        }},
+        onFailure: function(error) {{
+          console.error('Error loading Swagger UI:', error);
         }}
       }});
       
+      window.ui = ui;
+      
       window.setAuthToken = function(token) {{
+        if (!token || token.trim() === '') {{
+          alert('Por favor ingresa un token válido');
+          return;
+        }}
+        
         localStorage.setItem('authToken', token);
         ui.preauthorizeApiKey('bearerAuth', 'Bearer ' + token);
-        alert('Token de autorización establecido');
+        
+        // Actualizar el campo de entrada
+        const tokenInput = document.getElementById('jwtToken');
+        if (tokenInput) {{
+          tokenInput.value = token;
+        }}
+        
+        alert('Token de autorización establecido correctamente');
       }};
       
       window.clearAuthToken = function() {{
         localStorage.removeItem('authToken');
-        alert('Token de autorización eliminado');
+        
+        // Limpiar el campo de entrada
+        const tokenInput = document.getElementById('jwtToken');
+        if (tokenInput) {{
+          tokenInput.value = '';
+        }}
+        
+        // Recargar la página para limpiar la autorización
+        location.reload();
       }};
       
+      // Agregar la sección de configuración de token después de que se cargue
       setTimeout(function() {{
         const infoDiv = document.querySelector('.info');
-        if (infoDiv) {{
+        if (infoDiv && !document.getElementById('token-config')) {{
+          const savedToken = localStorage.getItem('authToken');
           const tokenDiv = document.createElement('div');
+          tokenDiv.id = 'token-config';
           tokenDiv.innerHTML = `
-            <div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #007bff;">
+            <div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #007bff;">
               <h4 style="margin: 0 0 10px 0; color: #007bff;">🔐 Configuración de Token JWT</h4>
-              <p style="margin: 0 0 10px 0; color: #6c757d;">Para probar los endpoints protegidos, establece tu token JWT:</p>
-              <div style="display: flex; gap: 10px; align-items: center;">
-                <input type="text" id="jwtToken" placeholder="Ingresa tu token JWT aquí..." style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                <button onclick="setAuthToken(document.getElementById('jwtToken').value)" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Establecer Token</button>
-                <button onclick="clearAuthToken()" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Limpiar</button>
+              <p style="margin: 0 0 10px 0; color: #6c757d; font-size: 14px;">
+                Para probar los endpoints protegidos, establece tu token JWT:
+              </p>
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input 
+                  type="text" 
+                  id="jwtToken" 
+                  placeholder="Ingresa tu token JWT aquí..." 
+                  value="${{savedToken || ''}}"
+                  style="flex: 1; min-width: 300px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                >
+                <button 
+                  onclick="setAuthToken(document.getElementById('jwtToken').value)" 
+                  style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; white-space: nowrap;"
+                >
+                  Establecer Token
+                </button>
+                <button 
+                  onclick="clearAuthToken()" 
+                  style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; white-space: nowrap;"
+                >
+                  Limpiar
+                </button>
+              </div>
+              <div style="margin-top: 10px; font-size: 12px; color: #6c757d;">
+                <strong>Estado:</strong> <span id="token-status">${{savedToken ? 'Token configurado ✅' : 'Sin token configurado ❌'}}</span>
               </div>
             </div>
           `;
           infoDiv.appendChild(tokenDiv);
         }}
-      }}, 1000);
+      }}, 1500);
     }};
   </script>
 </body>
@@ -99,7 +160,9 @@ def serve_swagger_ui(event, context):
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
                 'Access-Control-Allow-Methods': 'GET,OPTIONS',
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             },
             'body': html,
             'isBase64Encoded': False
@@ -140,7 +203,21 @@ def get_swagger_json(event, context):
             "openapi": "3.0.0",
             "info": {
                 "title": "API Compras - Microservicio Multi-tenant",
-                "description": "Microservicio para gestión de compras con soporte multi-tenant usando AWS Lambda y DynamoDB",
+                "description": """
+                Microservicio para gestión de compras con soporte multi-tenant usando AWS Lambda y DynamoDB.
+                
+                ## Autenticación
+                Esta API utiliza JWT Bearer tokens para autenticación. Para usar los endpoints protegidos:
+                1. Obtén un token JWT válido
+                2. Configúralo usando el botón "Establecer Token" arriba
+                3. O incluye el header: `Authorization: Bearer <tu-token>`
+                
+                ## Características
+                - Soporte multi-tenant
+                - Gestión completa de compras
+                - Estadísticas de compras
+                - Arquitectura serverless con AWS Lambda
+                """,
                 "version": "1.0.0",
                 "contact": {
                     "name": "Equipo de Desarrollo",
@@ -158,7 +235,8 @@ def get_swagger_json(event, context):
                     "bearerAuth": {
                         "type": "http",
                         "scheme": "bearer",
-                        "bearerFormat": "JWT"
+                        "bearerFormat": "JWT",
+                        "description": "Ingresa tu token JWT sin el prefijo 'Bearer '"
                     }
                 },
                 "schemas": {
@@ -180,18 +258,51 @@ def get_swagger_json(event, context):
                                 "type": "number",
                                 "format": "float",
                                 "description": "Precio unitario",
-                                "example": 12.50
+                                "example": 12.50,
+                                "minimum": 0
                             },
                             "cantidad": {
                                 "type": "integer",
                                 "description": "Cantidad comprada",
-                                "example": 2
+                                "example": 2,
+                                "minimum": 1
                             },
                             "subtotal": {
                                 "type": "number",
                                 "format": "float",
-                                "description": "Subtotal calculado automáticamente",
-                                "example": 25.00
+                                "description": "Subtotal calculado automáticamente (precio * cantidad)",
+                                "example": 25.00,
+                                "readOnly": True
+                            }
+                        }
+                    },
+                    "CompraRequest": {
+                        "type": "object",
+                        "required": ["productos"],
+                        "properties": {
+                            "productos": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/Producto"
+                                },
+                                "minItems": 1,
+                                "description": "Lista de productos a comprar"
+                            },
+                            "metodo_pago": {
+                                "type": "string",
+                                "description": "Método de pago utilizado",
+                                "example": "tarjeta",
+                                "enum": ["efectivo", "tarjeta", "transferencia", "yape", "plin"]
+                            },
+                            "direccion_entrega": {
+                                "type": "string",
+                                "description": "Dirección de entrega",
+                                "example": "Av. Siempre Viva 123, Lima"
+                            },
+                            "observaciones": {
+                                "type": "string",
+                                "description": "Observaciones adicionales",
+                                "example": "Entregar en horario de oficina"
                             }
                         }
                     },
@@ -209,6 +320,7 @@ def get_swagger_json(event, context):
                             },
                             "email_usuario": {
                                 "type": "string",
+                                "format": "email",
                                 "description": "Email del usuario"
                             },
                             "nombre_usuario": {
@@ -223,26 +335,28 @@ def get_swagger_json(event, context):
                             },
                             "total_productos": {
                                 "type": "integer",
-                                "description": "Total de productos"
+                                "description": "Total de productos comprados",
+                                "minimum": 0
                             },
                             "total_monto": {
                                 "type": "number",
                                 "format": "float",
-                                "description": "Monto total"
+                                "description": "Monto total de la compra",
+                                "minimum": 0
                             },
                             "fecha_compra": {
                                 "type": "string",
                                 "format": "date-time",
-                                "description": "Fecha de la compra"
+                                "description": "Fecha y hora de la compra"
                             },
                             "estado": {
                                 "type": "string",
                                 "enum": ["completada", "pendiente", "cancelada"],
-                                "description": "Estado de la compra"
+                                "description": "Estado actual de la compra"
                             },
                             "metodo_pago": {
                                 "type": "string",
-                                "description": "Método de pago"
+                                "description": "Método de pago utilizado"
                             },
                             "direccion_entrega": {
                                 "type": "string",
@@ -254,22 +368,99 @@ def get_swagger_json(event, context):
                             }
                         }
                     },
-                    "Error": {
+                    "CompraResponse": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string",
+                                "example": "Compra registrada exitosamente"
+                            },
+                            "compra": {
+                                "$ref": "#/components/schemas/Compra"
+                            }
+                        }
+                    },
+                    "ListaComprasResponse": {
+                        "type": "object",
+                        "properties": {
+                            "compras": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/Compra"
+                                }
+                            },
+                            "count": {
+                                "type": "integer",
+                                "description": "Número de compras devueltas en esta página"
+                            },
+                            "hasMore": {
+                                "type": "boolean",
+                                "description": "Indica si hay más resultados disponibles"
+                            }
+                        }
+                    },
+                    "EstadisticasResponse": {
+                        "type": "object",
+                        "properties": {
+                            "total_compras": {
+                                "type": "integer",
+                                "description": "Total de compras realizadas",
+                                "minimum": 0
+                            },
+                            "total_gastado": {
+                                "type": "number",
+                                "format": "float",
+                                "description": "Total gastado en compras",
+                                "minimum": 0
+                            },
+                            "total_productos_comprados": {
+                                "type": "integer",
+                                "description": "Total de productos comprados",
+                                "minimum": 0
+                            },
+                            "promedio_por_compra": {
+                                "type": "number",
+                                "format": "float",
+                                "description": "Promedio gastado por compra",
+                                "minimum": 0
+                            },
+                            "primera_compra": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Fecha de la primera compra"
+                            },
+                            "ultima_compra": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Fecha de la última compra"
+                            }
+                        }
+                    },
+                    "ErrorResponse": {
                         "type": "object",
                         "properties": {
                             "error": {
                                 "type": "string",
                                 "description": "Mensaje de error"
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "Descripción detallada del error"
                             }
                         }
                     }
                 }
             },
+            "security": [
+                {
+                    "bearerAuth": []
+                }
+            ],
             "paths": {
                 "/compras/registrar": {
                     "post": {
                         "summary": "Registrar nueva compra",
-                        "description": "Registra una nueva compra con múltiples productos",
+                        "description": "Registra una nueva compra con múltiples productos. El código de compra se genera automáticamente.",
                         "tags": ["Compras"],
                         "security": [{"bearerAuth": []}],
                         "requestBody": {
@@ -277,29 +468,47 @@ def get_swagger_json(event, context):
                             "content": {
                                 "application/json": {
                                     "schema": {
-                                        "type": "object",
-                                        "required": ["productos"],
-                                        "properties": {
-                                            "productos": {
-                                                "type": "array",
-                                                "items": {
-                                                    "$ref": "#/components/schemas/Producto"
-                                                }
-                                            },
-                                            "metodo_pago": {
-                                                "type": "string",
-                                                "description": "Método de pago",
-                                                "example": "tarjeta"
-                                            },
-                                            "direccion_entrega": {
-                                                "type": "string",
-                                                "description": "Dirección de entrega",
-                                                "example": "Av. Siempre Viva 123, Lima"
-                                            },
-                                            "observaciones": {
-                                                "type": "string",
-                                                "description": "Observaciones adicionales",
-                                                "example": "Entregar en horario de oficina"
+                                        "$ref": "#/components/schemas/CompraRequest"
+                                    },
+                                    "examples": {
+                                        "compra_simple": {
+                                            "summary": "Compra simple",
+                                            "description": "Ejemplo de compra con un solo producto",
+                                            "value": {
+                                                "productos": [
+                                                    {
+                                                        "codigo": "MED-ABC123-DEF456",
+                                                        "nombre": "Paracetamol 500mg",
+                                                        "precio": 12.50,
+                                                        "cantidad": 2
+                                                    }
+                                                ],
+                                                "metodo_pago": "tarjeta",
+                                                "direccion_entrega": "Av. Siempre Viva 123, Lima",
+                                                "observaciones": "Entregar en horario de oficina"
+                                            }
+                                        },
+                                        "compra_multiple": {
+                                            "summary": "Compra múltiple",
+                                            "description": "Ejemplo de compra con varios productos",
+                                            "value": {
+                                                "productos": [
+                                                    {
+                                                        "codigo": "MED-ABC123-DEF456",
+                                                        "nombre": "Paracetamol 500mg",
+                                                        "precio": 12.50,
+                                                        "cantidad": 2
+                                                    },
+                                                    {
+                                                        "codigo": "MED-XYZ789-GHI012",
+                                                        "nombre": "Ibuprofeno 400mg",
+                                                        "precio": 8.75,
+                                                        "cantidad": 1
+                                                    }
+                                                ],
+                                                "metodo_pago": "efectivo",
+                                                "direccion_entrega": "Jr. Los Olivos 456, San Isidro",
+                                                "observaciones": "Llamar antes de entregar"
                                             }
                                         }
                                     }
@@ -312,16 +521,7 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "type": "object",
-                                            "properties": {
-                                                "message": {
-                                                    "type": "string",
-                                                    "example": "Compra registrada exitosamente"
-                                                },
-                                                "compra": {
-                                                    "$ref": "#/components/schemas/Compra"
-                                                }
-                                            }
+                                            "$ref": "#/components/schemas/CompraResponse"
                                         }
                                     }
                                 }
@@ -331,7 +531,7 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "$ref": "#/components/schemas/Error"
+                                            "$ref": "#/components/schemas/ErrorResponse"
                                         }
                                     }
                                 }
@@ -341,7 +541,17 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "$ref": "#/components/schemas/Error"
+                                            "$ref": "#/components/schemas/ErrorResponse"
+                                        }
+                                    }
+                                }
+                            },
+                            "500": {
+                                "description": "Error interno del servidor",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/ErrorResponse"
                                         }
                                     }
                                 }
@@ -371,7 +581,7 @@ def get_swagger_json(event, context):
                             {
                                 "name": "tenant_id",
                                 "in": "query",
-                                "description": "ID del tenant (opcional)",
+                                "description": "ID del tenant (opcional, se toma del token si no se especifica)",
                                 "required": False,
                                 "schema": {
                                     "type": "string"
@@ -384,23 +594,7 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "type": "object",
-                                            "properties": {
-                                                "compras": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "$ref": "#/components/schemas/Compra"
-                                                    }
-                                                },
-                                                "count": {
-                                                    "type": "integer",
-                                                    "description": "Número de compras devueltas"
-                                                },
-                                                "hasMore": {
-                                                    "type": "boolean",
-                                                    "description": "Indica si hay más resultados"
-                                                }
-                                            }
+                                            "$ref": "#/components/schemas/ListaComprasResponse"
                                         }
                                     }
                                 }
@@ -410,7 +604,17 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "$ref": "#/components/schemas/Error"
+                                            "$ref": "#/components/schemas/ErrorResponse"
+                                        }
+                                    }
+                                }
+                            },
+                            "500": {
+                                "description": "Error interno del servidor",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/ErrorResponse"
                                         }
                                     }
                                 }
@@ -421,14 +625,14 @@ def get_swagger_json(event, context):
                 "/compras/buscar/{codigo}": {
                     "get": {
                         "summary": "Buscar compra por código",
-                        "description": "Busca una compra específica por su código",
+                        "description": "Busca una compra específica por su código único",
                         "tags": ["Compras"],
                         "security": [{"bearerAuth": []}],
                         "parameters": [
                             {
                                 "name": "codigo",
                                 "in": "path",
-                                "description": "Código de la compra",
+                                "description": "Código único de la compra",
                                 "required": True,
                                 "schema": {
                                     "type": "string",
@@ -457,7 +661,7 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "$ref": "#/components/schemas/Error"
+                                            "$ref": "#/components/schemas/ErrorResponse"
                                         }
                                     }
                                 }
@@ -467,7 +671,17 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "$ref": "#/components/schemas/Error"
+                                            "$ref": "#/components/schemas/ErrorResponse"
+                                        }
+                                    }
+                                }
+                            },
+                            "500": {
+                                "description": "Error interno del servidor",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/ErrorResponse"
                                         }
                                     }
                                 }
@@ -478,7 +692,7 @@ def get_swagger_json(event, context):
                 "/compras/estadisticas": {
                     "get": {
                         "summary": "Obtener estadísticas de compras",
-                        "description": "Obtiene estadísticas de compras del usuario autenticado",
+                        "description": "Obtiene estadísticas completas de compras del usuario autenticado",
                         "tags": ["Compras"],
                         "security": [{"bearerAuth": []}],
                         "responses": {
@@ -487,37 +701,7 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "type": "object",
-                                            "properties": {
-                                                "total_compras": {
-                                                    "type": "integer",
-                                                    "description": "Total de compras realizadas"
-                                                },
-                                                "total_gastado": {
-                                                    "type": "number",
-                                                    "format": "float",
-                                                    "description": "Total gastado en compras"
-                                                },
-                                                "total_productos_comprados": {
-                                                    "type": "integer",
-                                                    "description": "Total de productos comprados"
-                                                },
-                                                "promedio_por_compra": {
-                                                    "type": "number",
-                                                    "format": "float",
-                                                    "description": "Promedio gastado por compra"
-                                                },
-                                                "primera_compra": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Fecha de la primera compra"
-                                                },
-                                                "ultima_compra": {
-                                                    "type": "string",
-                                                    "format": "date-time",
-                                                    "description": "Fecha de la última compra"
-                                                }
-                                            }
+                                            "$ref": "#/components/schemas/EstadisticasResponse"
                                         }
                                     }
                                 }
@@ -527,7 +711,17 @@ def get_swagger_json(event, context):
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "$ref": "#/components/schemas/Error"
+                                            "$ref": "#/components/schemas/ErrorResponse"
+                                        }
+                                    }
+                                }
+                            },
+                            "500": {
+                                "description": "Error interno del servidor",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/ErrorResponse"
                                         }
                                     }
                                 }
@@ -535,7 +729,13 @@ def get_swagger_json(event, context):
                         }
                     }
                 }
-            }
+            },
+            "tags": [
+                {
+                    "name": "Compras",
+                    "description": "Operaciones relacionadas con la gestión de compras"
+                }
+            ]
         }
         
         return {
@@ -544,13 +744,19 @@ def get_swagger_json(event, context):
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-                'Access-Control-Allow-Methods': 'GET,OPTIONS'
+                'Access-Control-Allow-Methods': 'GET,OPTIONS',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             },
             'body': json.dumps(swagger_spec, indent=2)
         }
         
     except Exception as e:
         print(f"Error generando Swagger JSON: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
         return {
             'statusCode': 500,
             'headers': {
