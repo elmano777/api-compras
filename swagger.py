@@ -199,17 +199,13 @@ def get_swagger_json(event, context):
         stage = event.get('requestContext', {}).get('stage', 'dev')
         base_url = f"https://{host}/{stage}"
         
-        # Especificación OpenAPI 3.0.0 válida
+        # Especificación OpenAPI 3.0.0 - Corregida y simplificada
         swagger_spec = {
             "openapi": "3.0.0",
             "info": {
                 "title": "API Compras - Microservicio Multi-tenant",
                 "version": "1.0.0",
-                "description": "Microservicio para gestión de compras con soporte multi-tenant usando AWS Lambda y DynamoDB.\n\n## Autenticación\nEsta API utiliza JWT Bearer tokens para autenticación. Para usar los endpoints protegidos:\n1. Obtén un token JWT válido\n2. Configúralo usando el botón 'Establecer Token' arriba\n3. O incluye el header: `Authorization: Bearer <tu-token>`\n\n## Características\n- Soporte multi-tenant\n- Gestión completa de compras\n- Estadísticas de compras\n- Arquitectura serverless con AWS Lambda",
-                "contact": {
-                    "name": "Equipo de Desarrollo",
-                    "email": "desarrollo@inkafarma.com"
-                }
+                "description": "Microservicio para gestión de compras con soporte multi-tenant usando AWS Lambda y DynamoDB."
             },
             "servers": [
                 {
@@ -222,8 +218,7 @@ def get_swagger_json(event, context):
                     "bearerAuth": {
                         "type": "http",
                         "scheme": "bearer",
-                        "bearerFormat": "JWT",
-                        "description": "Ingresa tu token JWT sin el prefijo 'Bearer '"
+                        "bearerFormat": "JWT"
                     }
                 },
                 "schemas": {
@@ -245,21 +240,12 @@ def get_swagger_json(event, context):
                                 "type": "number",
                                 "format": "float",
                                 "description": "Precio unitario",
-                                "example": 12.50,
-                                "minimum": 0
+                                "example": 12.50
                             },
                             "cantidad": {
                                 "type": "integer",
                                 "description": "Cantidad comprada",
-                                "example": 2,
-                                "minimum": 1
-                            },
-                            "subtotal": {
-                                "type": "number",
-                                "format": "float",
-                                "description": "Subtotal calculado automáticamente (precio * cantidad)",
-                                "example": 25.00,
-                                "readOnly": True
+                                "example": 2
                             }
                         }
                     },
@@ -271,15 +257,12 @@ def get_swagger_json(event, context):
                                 "type": "array",
                                 "items": {
                                     "$ref": "#/components/schemas/Producto"
-                                },
-                                "minItems": 1,
-                                "description": "Lista de productos a comprar"
+                                }
                             },
                             "metodo_pago": {
                                 "type": "string",
                                 "description": "Método de pago utilizado",
-                                "example": "tarjeta",
-                                "enum": ["efectivo", "tarjeta", "transferencia", "yape", "plin"]
+                                "example": "tarjeta"
                             },
                             "direccion_entrega": {
                                 "type": "string",
@@ -322,14 +305,12 @@ def get_swagger_json(event, context):
                             },
                             "total_productos": {
                                 "type": "integer",
-                                "description": "Total de productos comprados",
-                                "minimum": 0
+                                "description": "Total de productos comprados"
                             },
                             "total_monto": {
                                 "type": "number",
                                 "format": "float",
-                                "description": "Monto total de la compra",
-                                "minimum": 0
+                                "description": "Monto total de la compra"
                             },
                             "fecha_compra": {
                                 "type": "string",
@@ -378,11 +359,11 @@ def get_swagger_json(event, context):
                             },
                             "count": {
                                 "type": "integer",
-                                "description": "Número de compras devueltas en esta página"
+                                "description": "Número de compras devueltas"
                             },
                             "hasMore": {
                                 "type": "boolean",
-                                "description": "Indica si hay más resultados disponibles"
+                                "description": "Indica si hay más resultados"
                             }
                         }
                     },
@@ -391,25 +372,21 @@ def get_swagger_json(event, context):
                         "properties": {
                             "total_compras": {
                                 "type": "integer",
-                                "description": "Total de compras realizadas",
-                                "minimum": 0
+                                "description": "Total de compras realizadas"
                             },
                             "total_gastado": {
                                 "type": "number",
                                 "format": "float",
-                                "description": "Total gastado en compras",
-                                "minimum": 0
+                                "description": "Total gastado en compras"
                             },
                             "total_productos_comprados": {
                                 "type": "integer",
-                                "description": "Total de productos comprados",
-                                "minimum": 0
+                                "description": "Total de productos comprados"
                             },
                             "promedio_por_compra": {
                                 "type": "number",
                                 "format": "float",
-                                "description": "Promedio gastado por compra",
-                                "minimum": 0
+                                "description": "Promedio gastado por compra"
                             },
                             "primera_compra": {
                                 "type": "string",
@@ -447,7 +424,7 @@ def get_swagger_json(event, context):
                 "/compras/registrar": {
                     "post": {
                         "summary": "Registrar nueva compra",
-                        "description": "Registra una nueva compra con múltiples productos. El código de compra se genera automáticamente.",
+                        "description": "Registra una nueva compra con múltiples productos",
                         "tags": ["Compras"],
                         "security": [{"bearerAuth": []}],
                         "requestBody": {
@@ -457,47 +434,18 @@ def get_swagger_json(event, context):
                                     "schema": {
                                         "$ref": "#/components/schemas/CompraRequest"
                                     },
-                                    "examples": {
-                                        "compra_simple": {
-                                            "summary": "Compra simple",
-                                            "description": "Ejemplo de compra con un solo producto",
-                                            "value": {
-                                                "productos": [
-                                                    {
-                                                        "codigo": "MED-ABC123-DEF456",
-                                                        "nombre": "Paracetamol 500mg",
-                                                        "precio": 12.50,
-                                                        "cantidad": 2
-                                                    }
-                                                ],
-                                                "metodo_pago": "tarjeta",
-                                                "direccion_entrega": "Av. Siempre Viva 123, Lima",
-                                                "observaciones": "Entregar en horario de oficina"
+                                    "example": {
+                                        "productos": [
+                                            {
+                                                "codigo": "MED-ABC123-DEF456",
+                                                "nombre": "Paracetamol 500mg",
+                                                "precio": 12.50,
+                                                "cantidad": 2
                                             }
-                                        },
-                                        "compra_multiple": {
-                                            "summary": "Compra múltiple",
-                                            "description": "Ejemplo de compra con varios productos",
-                                            "value": {
-                                                "productos": [
-                                                    {
-                                                        "codigo": "MED-ABC123-DEF456",
-                                                        "nombre": "Paracetamol 500mg",
-                                                        "precio": 12.50,
-                                                        "cantidad": 2
-                                                    },
-                                                    {
-                                                        "codigo": "MED-XYZ789-GHI012",
-                                                        "nombre": "Ibuprofeno 400mg",
-                                                        "precio": 8.75,
-                                                        "cantidad": 1
-                                                    }
-                                                ],
-                                                "metodo_pago": "efectivo",
-                                                "direccion_entrega": "Jr. Los Olivos 456, San Isidro",
-                                                "observaciones": "Llamar antes de entregar"
-                                            }
-                                        }
+                                        ],
+                                        "metodo_pago": "tarjeta",
+                                        "direccion_entrega": "Av. Siempre Viva 123, Lima",
+                                        "observaciones": "Entregar en horario de oficina"
                                     }
                                 }
                             }
@@ -560,15 +508,13 @@ def get_swagger_json(event, context):
                                 "required": False,
                                 "schema": {
                                     "type": "integer",
-                                    "default": 10,
-                                    "minimum": 1,
-                                    "maximum": 100
+                                    "default": 10
                                 }
                             },
                             {
                                 "name": "tenant_id",
                                 "in": "query",
-                                "description": "ID del tenant (opcional, se toma del token si no se especifica)",
+                                "description": "ID del tenant",
                                 "required": False,
                                 "schema": {
                                     "type": "string"
@@ -725,8 +671,21 @@ def get_swagger_json(event, context):
             ]
         }
         
-        # Asegurar que el JSON sea válido
-        json_response = json.dumps(swagger_spec, indent=2, ensure_ascii=False)
+        # Convertir a JSON con manejo de errores
+        try:
+            json_response = json.dumps(swagger_spec, ensure_ascii=False, separators=(',', ':'))
+        except Exception as json_error:
+            print(f"Error al convertir a JSON: {str(json_error)}")
+            # Fallback a especificación mínima
+            minimal_spec = {
+                "openapi": "3.0.0",
+                "info": {
+                    "title": "API Compras",
+                    "version": "1.0.0"
+                },
+                "paths": {}
+            }
+            json_response = json.dumps(minimal_spec, ensure_ascii=False)
         
         return {
             'statusCode': 200,
@@ -734,10 +693,7 @@ def get_swagger_json(event, context):
                 'Content-Type': 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-                'Access-Control-Allow-Methods': 'GET,OPTIONS',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0'
+                'Access-Control-Allow-Methods': 'GET,OPTIONS'
             },
             'body': json_response,
             'isBase64Encoded': False
@@ -748,15 +704,23 @@ def get_swagger_json(event, context):
         import traceback
         traceback.print_exc()
         
+        # Respuesta de error mínima pero válida
+        error_spec = {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "API Compras - Error",
+                "version": "1.0.0",
+                "description": f"Error generando especificación: {str(e)}"
+            },
+            "paths": {}
+        }
+        
         return {
-            'statusCode': 500,
+            'statusCode': 200,  # Cambiado a 200 para que Swagger UI pueda mostrar el error
             'headers': {
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin': '*'
             },
-            'body': json.dumps({
-                'error': 'Error interno del servidor',
-                'message': str(e)
-            }),
+            'body': json.dumps(error_spec, ensure_ascii=False),
             'isBase64Encoded': False
         }
