@@ -155,9 +155,14 @@ def registrar_compra(event, context):
 
 def listar_compras(event, context):
     """
-    Lista las compras con limit real - versión simple
+    Lista las compras del usuario autenticado con limit real
     """
     try:
+        # Validar token y extraer usuario
+        usuario, error = extract_user_from_token(event)
+        if error:
+            return lambda_response(401, {'error': error})
+        
         # Obtener parámetros de query
         query_params = event.get('queryStringParameters') or {}
         
@@ -165,74 +170,60 @@ def listar_compras(event, context):
         limit = int(query_params.get('limit', 10))
         
         # Parámetros de filtro (opcionales)
-        tenant_id = query_params.get('tenant_id')
         fecha_desde = query_params.get('fecha_desde')
         fecha_hasta = query_params.get('fecha_hasta')
         
-        # Hacer scan completo (simple pero funciona)
-        response = table.scan()
+        # Consultar compras del usuario específico usando query
+        response = table.query(
+            KeyConditionExpression='tenant_id = :tenant_id',
+            FilterExpression='email_usuario = :email',
+            ExpressionAttributeValues={
+                ':tenant_id': usuario['tenant_id'],
+                ':email': usuario['email']
+            }
+        )
+        
         items = response.get('Items', [])
         
-        # Aplicar filtros manualmente SI se especifican
-        if tenant_id:
-            items = [item for item in items if item.get('tenant_id') == tenant_id]
-        
+        # Aplicar filtros de fecha SI se especifican
         if fecha_desde:
             items = [item for item in items if item.get('fecha_compra', '') >= fecha_desde]
             
         if fecha_hasta:
             items = [item for item in items if item.get('fecha_compra', '') <= fecha_hasta]
         
-        # APLICAR LIMIT DIRECTAMENTE - ESTO ES LO IMPORTANTE
+        # Ordenar por fecha de compra (más reciente primero)
+        items.sort(key=lambda x: x.get('fecha_compra', ''), reverse=True)
+        
+        # APLICAR LIMIT DIRECTAMENTE
         items = items[:limit]
         
         # Convertir Decimal a float para JSON
         items = decimal_to_float(items)
         
-        # Preparar respuesta simple
+        # Preparar respuesta
         result = {
             'compras': items,
             'count': len(items),
-            'hasMore': False  # Para simplificar, sin paginación compleja
+            'hasMore': False,  # Para simplificar, sin paginación compleja
+            'usuario': {
+                'email': usuario['email'],
+                'nombre': usuario['nombre'],
+                'tenant_id': usuario['tenant_id']
+            }
         }
         
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-                'Access-Control-Allow-Methods': 'GET,OPTIONS'
-            },
-            'body': json.dumps(result, ensure_ascii=False)
-        }
+        return lambda_response(200, result)
         
     except ValueError as e:
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'error': 'Parámetros inválidos',
-                'message': str(e)
-            }, ensure_ascii=False)
-        }
+        return lambda_response(400, {
+            'error': 'Parámetros inválidos',
+            'message': str(e)
+        })
         
     except Exception as e:
         print(f"Error en listar_compras: {str(e)}")
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'error': 'Error interno del servidor',
-                'message': str(e)
-            }, ensure_ascii=False)
-        }
+        return lambda_response(500, {'error': 'Error interno del servidor'})
 
 def buscar_compra(event, context):
     """Función para buscar una compra específica por código"""
